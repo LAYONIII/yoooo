@@ -33,7 +33,7 @@
       const b = document.createElement('button');
       b.className = 'answer';
       b.type = 'button';
-      b.style.animationDelay = `${i * 60}ms`;
+      b.style.animationDelay = `${i * 80}ms`;
       b.innerHTML = `<span class="key">${i + 1}</span><span class="a-text">${esc(c.label)}${c.sub ? `<span class="a-sub">${esc(c.sub)}</span>` : ''}</span>`;
       b.addEventListener('click', () => Quiz.answer(i));
       box.appendChild(b);
@@ -93,7 +93,11 @@
   }
 
   // ---------- Événements audio ----------
-  audio.addEventListener('playing', () => { document.body.classList.add('is-playing'); beginTimer(); });
+  audio.addEventListener('playing', () => {
+    if (q && q.paused) { audio.pause(); return; }
+    document.body.classList.add('is-playing');
+    beginTimer();
+  });
   ['pause', 'ended', 'emptied'].forEach((ev) => audio.addEventListener(ev, () => document.body.classList.remove('is-playing')));
   audio.addEventListener('error', () => {
     if (!q || q.locked || !audio.getAttribute('src')) return;
@@ -143,11 +147,10 @@
     ask(opts) {
       Quiz.stopTimer();
       q = Object.assign({ locked: false, started: false, elapsed: 0, startAt: 0, removed: new Set(), picked: null }, opts);
-      $('#cover').classList.add('hidden');
+      $('#flip').classList.remove('flipped');
       $('#cover').removeAttribute('src');
-      $('#vinylLabel').classList.remove('hidden');
       $('#vinylLabel').textContent = '?';
-      $('#vinyl').classList.remove('revealed');
+      $('#pauseOverlay').classList.add('hidden');
       $('#reveal').innerHTML = '';
       $('#questionLabel').textContent = opts.prompt || 'Quel est ce titre ?';
       $('#nextBtn').classList.add('hidden');
@@ -169,7 +172,7 @@
     },
 
     answer(choice) {
-      if (!q || q.locked) return;
+      if (!q || q.locked || q.paused) return;
       if (typeof choice === 'number' && q.removed.has(choice)) return;
       q.locked = true;
       Quiz.stopTimer();
@@ -188,11 +191,18 @@
       const picked = q ? q.picked : null;
       if (typeof picked === 'number' && picked !== correctIndex && buttons[picked]) buttons[picked].classList.add('wrong');
       if (cover) {
+        // le disque se retourne en 3D pour montrer la pochette
         const img = $('#cover');
+        const flip = () => $('#flip').classList.add('flipped');
+        img.onload = flip;
+        img.onerror = null;
         img.src = cover;
-        img.classList.remove('hidden');
-        $('#vinylLabel').classList.add('hidden');
-        $('#vinyl').classList.add('revealed');
+        if (img.complete) flip();
+      }
+      if (BT.FX) BT.FX.pulse(status);
+      if (status === 'ok' && buttons[correctIndex]) {
+        const r = buttons[correctIndex].getBoundingClientRect();
+        BT.confetti(45, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
       }
       const head = message || (status === 'ok' ? `<span class="r-points good">+${points} pts</span>`
         : status === 'skip' ? '<span class="r-points">Question passée</span>'
@@ -237,7 +247,35 @@
       el.textContent = value;
       if (bump) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
     },
-    replay() { if (q) playAudio(false); },
+    replay() { if (q && !q.paused) playAudio(false); },
+    /** Met la question en pause (solo uniquement). */
+    pause() {
+      if (!q || q.locked || q.paused) return false;
+      q.paused = true;
+      Quiz.stopTimer();
+      audio.pause();
+      $('#pauseOverlay').classList.remove('hidden');
+      return true;
+    },
+    resume() {
+      if (!q || !q.paused) return;
+      q.paused = false;
+      $('#pauseOverlay').classList.add('hidden');
+      if (q.started) {
+        q.startAt = performance.now() - q.elapsed * 1000;
+        lastFrame = performance.now();
+        rafId = requestAnimationFrame(loop);
+      } else startTimer = setTimeout(beginTimer, 7000);
+      const p = audio.play();
+      if (p && p.catch) p.catch(() => {});
+    },
+    isPaused() { return !!(q && q.paused); },
+    /** Pastilles de progression : results = ['ok','ko',...], total = nombre de questions. */
+    setDots(results, total, current) {
+      const box = $('#dots');
+      if (!total || total > 40) { box.innerHTML = ''; return; }
+      box.innerHTML = Array.from({ length: total }, (_, i) => `<i class="${results[i] || ''}${i === current ? ' current' : ''}"></i>`).join('');
+    },
     elapsed() { return q ? q.elapsed : 0; },
     isLocked() { return !q || q.locked; },
     stopTimer() { cancelAnimationFrame(rafId); clearTimeout(startTimer); },
@@ -263,6 +301,8 @@
     if (document.body.dataset.screen !== 'play' || document.querySelector('dialog[open]')) return;
     if (e.target.matches('input, textarea')) return;
     const map = { 1: 0, 2: 1, 3: 2, 4: 3, '&': 0, 'é': 1, '"': 2, "'": 3 };
+    if (e.key === 'Escape' && q && q.onPause) { e.preventDefault(); if (q.paused) Quiz.resume(); else q.onPause(); return; }
+    if (q && q.paused) return;
     if (e.key in map && q && !q.locked) { e.preventDefault(); Quiz.answer(map[e.key]); }
     else if (e.key === ' ') { e.preventDefault(); Quiz.replay(); }
     else if (e.key === 'Enter' && !$('#nextBtn').classList.contains('hidden')) { e.preventDefault(); $('#nextBtn').click(); }

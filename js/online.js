@@ -179,7 +179,7 @@
     show('loading');
     $('#loadingText').textContent = text;
     try {
-      S.pool = await BT.loadPool(S.config.sources, S.config.opts);
+      S.pool = await BT.loadPool(S.config.sources, S.config.opts, (txt) => { $('#loadingText').textContent = `Chargement de toute la discographie… ${txt}`; });
     } catch (err) {
       S.state = 'lobby';
       sendLobby();
@@ -194,7 +194,24 @@
     S.index = -1;
     S.history = [];
     S.players.forEach((p) => Object.assign(p, { score: 0, streak: 0, correct: 0, lastPoints: 0 }));
-    nextRound();
+    // compte à rebours synchronisé chez tout le monde, puis première question
+    const msg = { t: 'countdown', total: S.total, count: S.pool.count, players: playerList() };
+    broadcast(msg);
+    onCountdown(msg);
+    later(nextRound, 3400);
+  }
+
+  function onCountdown(msg) {
+    S.myDots = [];
+    if (msg.players) S.players = new Map(msg.players.map((p) => [p.id, { ...(S.players.get(p.id) || {}), ...p }]));
+    setupPlayScreen();
+    Quiz.updateHud('progress', `1/${msg.total}`);
+    Quiz.setDots([], msg.total, 0);
+    $('#flip').classList.remove('flipped');
+    $('#answers').innerHTML = '';
+    $('#reveal').innerHTML = `<span class="r-sub">🎵 ${msg.count} morceaux · ${msg.total} questions</span>`;
+    renderScoreboard();
+    BT.countdown(3);
   }
 
   function nextRound() {
@@ -331,6 +348,7 @@
       case 'welcome': S.myId = msg.id; S.code = msg.code; S.state = 'lobby'; sfx('join'); break;
       case 'lobby': applyLobby(msg); break;
       case 'loading': S.state = 'loading'; show('loading'); $('#loadingText').textContent = msg.text; break;
+      case 'countdown': onCountdown(msg); break;
       case 'question': onQuestion(msg); break;
       case 'answered': markAnswered(msg.ids); break;
       case 'reveal': onReveal(msg); break;
@@ -399,6 +417,7 @@
 
   function setupPlayScreen() {
     document.body.dataset.playMode = 'online';
+    $('#pauseBtn').classList.add('hidden');
     $('#scoreboardWrap').classList.remove('hidden');
     $('#playEmojiBar').classList.remove('hidden');
     Quiz.setHud([
@@ -431,6 +450,9 @@
     if (msg.players) S.players = new Map(msg.players.map((p) => [p.id, { ...(S.players.get(p.id) || {}), ...p, lastPoints: 0 }]));
     if (document.body.dataset.screen !== 'play' || document.body.dataset.playMode !== 'online') setupPlayScreen();
     Quiz.updateHud('progress', `${msg.round + 1}/${msg.total}`);
+    S.myDots = S.myDots || [];
+    S.total = msg.total;
+    Quiz.setDots(S.myDots, msg.total, msg.round);
     updateHud();
     renderScoreboard(new Set());
     Quiz.ask({
@@ -459,6 +481,9 @@
     const mine = msg.results.find((r) => r.id === S.myId);
     let status = 'none';
     if (mine) status = mine.points > 0 ? 'ok' : mine.choice === null ? 'timeout' : 'ko';
+    S.myDots = S.myDots || [];
+    S.myDots[msg.round] = status === 'none' ? 'skip' : status === 'timeout' ? 'ko' : status;
+    Quiz.setDots(S.myDots, S.total, -1);
     const t = msg.track;
     const isFirst = msg.first && msg.first === S.myId;
     const message = status === 'ok'
@@ -578,8 +603,8 @@
     S.players = new Map();
   }
 
-  function leave(confirmFirst) {
-    if (confirmFirst && !confirm(S.isHost ? 'Fermer le salon ? Tous les joueurs seront déconnectés.' : 'Quitter le salon ?')) return;
+  async function leave(confirmFirst) {
+    if (confirmFirst && !(await BT.confirmBox(S.isHost ? 'Fermer le salon ? Tous les joueurs seront déconnectés.' : 'Quitter le salon ?', { ok: S.isHost ? 'Fermer le salon' : 'Quitter', danger: true }))) return;
     S.leaving = true;
     if (S.isHost) broadcast({ t: 'closed' });
     Quiz.stop();

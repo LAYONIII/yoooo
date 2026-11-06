@@ -7,14 +7,11 @@
   const { $, $$, esc, store, show, toast, api, CHARTS, sourceKey, initials, fmtFans, DIFFICULTY, MODES, AVATARS, profile } = BT;
 
   const MAX_SELECTED = 8;
-  const PRESETS = {
-    fr: ['Ninho', 'Jul', 'PNL', 'Damso', 'SCH', 'Booba', 'Gazo', 'Tiakola', 'Nekfeu', 'Orelsan', 'Niska', 'Werenoi', 'Hamza', 'Naps', 'Lacrim', 'Kaaris', 'Gims', 'Soolking'],
-    us: ['Drake', 'Kendrick Lamar', 'Travis Scott', 'Eminem', 'Kanye West', 'Future', 'J. Cole', '21 Savage', 'Lil Baby', 'Post Malone', 'Nicki Minaj', 'Tyler, The Creator'],
-    pop: ['Aya Nakamura', 'Angèle', 'Stromae', 'Dua Lipa', 'The Weeknd', 'Rihanna', 'Beyoncé', 'Taylor Swift', 'Bad Bunny', 'Billie Eilish', 'Ed Sheeran', 'Indila'],
-  };
+  const CATS = BT.CATEGORIES;
 
   const selected = new Map(); // clé -> source (artiste ou playlist)
-  const settings = Object.assign({ play: 'solo', mode: 'classic', rounds: '10', guess: 'title', difficulty: 'normal', pool: '25' }, store.get('settings2', {}));
+  const settings = Object.assign({ play: 'solo', mode: 'classic', rounds: '10', guess: 'title', difficulty: 'normal', pool: '50' }, store.get('settings2', {}));
+  if (!['50', '100', 'all'].includes(settings.pool)) settings.pool = '50';
   const saveSettings = () => store.set('settings2', settings);
 
   // ---------- Fonctions partagées ----------
@@ -85,6 +82,7 @@
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = `artist${src.type === 'chart' ? ' chart' : ''}`;
+    btn.dataset.tilt = '16';
     if (src.id !== undefined) btn.dataset.key = sourceKey(src);
     btn.dataset.name = src.name;
     let pic;
@@ -134,7 +132,28 @@
       card.classList.toggle('selected', !!key && selected.has(key));
     });
     renderStartBtn();
+    renderActionBar();
+    BT.refreshCovers();
   }
+
+  BT.refreshCovers = () => BT.FX.setCovers([...selected.values()].map((s) => s.picture).filter(Boolean));
+
+  // ---------- Barre « Jouer » toujours visible ----------
+  let startVisible = false;
+  function renderActionBar() {
+    const bar = $('#actionBar');
+    const n = selected.size;
+    bar.classList.toggle('hidden', n === 0 || startVisible);
+    if (!n) return;
+    const list = [...selected.values()];
+    $('#abFaces').innerHTML = list.slice(0, 4).map((s) => s.type === 'chart' ? `<span class="face-mini">${esc(s.emoji)}</span>` : s.picture ? `<img src="${esc(s.picture)}" alt="">` : `<span class="face-mini">${esc(initials(s.name))}</span>`).join('') + (n > 4 ? `<span class="face-mini more">+${n - 4}</span>` : '');
+    $('#abTitle').textContent = n === 1 ? list[0].name : `${n} artistes / playlists`;
+    const poolLabel = { 50: 'Les hits', 100: 'Top 100', all: 'Toute la disco' }[settings.pool];
+    $('#abSub').textContent = settings.play === 'online' ? `En ligne · ${settings.rounds} questions · ${poolLabel}`
+      : `${MODES[settings.mode]}${settings.mode === 'classic' ? ` · ${settings.rounds} questions` : ''} · ${DIFFICULTY[settings.difficulty].label} · ${poolLabel}`;
+    $('#abPlay').textContent = settings.play === 'online' ? (BT.Online.isHosting() ? '✔ Salon' : '🌐 Créer') : '▶ Jouer';
+  }
+  $('#abPlay').addEventListener('click', () => $('#startBtn').click());
 
   function renderStartBtn() {
     const btn = $('#startBtn');
@@ -148,9 +167,18 @@
   }
 
   let currentCat = 'fr';
+  const TABS = [...CATS.map((c) => ({ id: c.id, label: c.label, desc: `${c.desc} · ${c.artists.length} artistes` })),
+    { id: 'charts', label: '📈 Playlists', desc: 'Les classements Deezer du moment' },
+    { id: 'recent', label: '🕘 Récents', desc: 'Les artistes avec qui tu as joué' }];
+  $('#tabs').innerHTML = TABS.map((t) => `<button class="tab${t.id === currentCat ? ' active' : ''}" data-cat="${t.id}" role="tab">${esc(t.label)}</button>`).join('');
+
+  let loadSeq = 0;
   function renderPresets() {
     const grid = $('#presets');
     grid.innerHTML = '';
+    const tab = TABS.find((t) => t.id === currentCat);
+    $('#catDesc').textContent = tab ? tab.desc : '';
+    $('#randomPick').classList.toggle('hidden', currentCat === 'recent' || currentCat === 'charts');
     if (currentCat === 'recent') {
       const recents = store.get('recent2', []);
       if (!recents.length) { grid.innerHTML = '<p class="empty">Les artistes et playlists avec lesquels tu as joué apparaîtront ici.</p>'; return; }
@@ -158,31 +186,65 @@
     } else if (currentCat === 'charts') {
       CHARTS.forEach((c) => grid.appendChild(sourceCard(c)));
     } else {
-      const names = PRESETS[currentCat];
-      names.forEach((name) => grid.appendChild(sourceCard(api.presetCache[name] || { type: 'artist', name }, { preset: true })));
+      const names = CATS.find((c) => c.id === currentCat).artists;
+      names.forEach((name, i) => {
+        const card = sourceCard(api.presetCache[name] || { type: 'artist', name }, { preset: true });
+        card.style.animationDelay = `${Math.min(i, 20) * 25}ms`;
+        grid.appendChild(card);
+      });
       loadPresetPictures(names);
     }
     renderSelected();
   }
 
-  // Charge les photos des suggestions en tâche de fond (une par une)
-  async function loadPresetPictures(names) {
-    for (const name of names) {
-      if (api.presetCache[name]) continue;
-      try {
-        const a = await api.resolve(name);
-        const old = $(`#presets .artist[data-name="${CSS.escape(name)}"]`);
-        if (old) { old.replaceWith(sourceCard(a, { preset: true })); renderSelected(); }
-      } catch { /* on garde les initiales */ }
-    }
+  // Charge les photos des suggestions en tâche de fond (4 à la fois, mises en cache)
+  function loadPresetPictures(names) {
+    const seq = ++loadSeq;
+    BT.pool(names.filter((n) => !api.presetCache[n]), 4, async (name) => {
+      if (seq !== loadSeq) return;
+      const a = await api.resolve(name);
+      const old = $(`#presets .artist[data-name="${CSS.escape(name)}"]`);
+      if (old && seq === loadSeq) {
+        const card = sourceCard(a, { preset: true });
+        card.style.animation = 'none';
+        old.replaceWith(card);
+        renderSelected();
+      }
+    });
   }
 
-  $$('.tab').forEach((tab) => tab.addEventListener('click', () => {
+  $('#tabs').addEventListener('click', (e) => {
+    const tab = e.target.closest('.tab');
+    if (!tab) return;
     $$('.tab').forEach((t) => t.classList.toggle('active', t === tab));
+    tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     currentCat = tab.dataset.cat;
     renderPresets();
-  }));
+  });
+
+  // 🎲 ajoute un artiste au hasard de la catégorie affichée
+  $('#randomPick').addEventListener('click', async () => {
+    const cat = CATS.find((c) => c.id === currentCat);
+    if (!cat) return;
+    const free = cat.artists.filter((n) => !(api.presetCache[n] && selected.has(sourceKey(api.presetCache[n]))));
+    if (!free.length) return;
+    const name = free[BT.rand(free.length)];
+    try { toggle(await api.resolve(name)); toast(`${name} ajouté !`, { icon: '🎲' }); } catch (err) { toast(err.message, { icon: '⚠️' }); }
+  });
+
+  // ⚡ partie rapide : un artiste connu au hasard, réglages classiques, on lance tout de suite
+  $('#quickPlay').addEventListener('click', async () => {
+    const names = CATS.filter((c) => ['fr', 'us', 'frpop', 'pop', 'legend'].includes(c.id)).flatMap((c) => c.artists);
+    const name = names[BT.rand(names.length)];
+    try {
+      const a = await api.resolve(name);
+      toast(`Partie rapide : ${a.name}`, { icon: '⚡' });
+      BT.Solo.start([a], { ...settings, play: 'solo', mode: 'classic', rounds: '10' });
+    } catch (err) { toast(err.message, { icon: '⚠️' }); }
+  });
+
   $('#clearSel').addEventListener('click', () => { selected.clear(); renderSelected(); });
+  new IntersectionObserver(([e]) => { startVisible = e.isIntersecting; renderActionBar(); }).observe($('#startBtn'));
 
   // ---------- Recherche ----------
   let searchSeq = 0;
@@ -229,6 +291,7 @@
     $$('[data-only="rounds"]').forEach((el) => el.classList.toggle('hidden', !online && settings.mode !== 'classic'));
     $('#settingHelp').textContent = online ? HELP.online : HELP[settings.mode];
     renderStartBtn();
+    renderActionBar();
   }
   $$('.settings .seg').forEach((seg) => seg.addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -255,10 +318,7 @@
 
   $('#logoBtn').addEventListener('click', () => {
     if (BT.Online.active()) { BT.Online.leave(true); return; }
-    if (BT.Solo.isRunning() && document.body.dataset.screen === 'play') {
-      if (!confirm('Quitter la partie en cours ?')) return;
-      BT.Solo.abort();
-    }
+    if (BT.Solo.isRunning() && document.body.dataset.screen === 'play') { BT.Solo.quit(); return; }
     show('home');
   });
 
@@ -345,8 +405,8 @@
     $$('#lbFilter button').forEach((x) => x.classList.toggle('active', x === b));
     renderLeaderboard();
   });
-  $('#resetStats').addEventListener('click', () => {
-    if (!confirm('Effacer tous tes scores et records ?')) return;
+  $('#resetStats').addEventListener('click', async () => {
+    if (!(await BT.confirmBox('Effacer tous tes scores et records ?', { ok: 'Effacer', danger: true }))) return;
     store.set('scores2', []); store.set('records', {});
     renderLeaderboard();
   });
@@ -382,8 +442,8 @@
     if (!artistIds.length && !chartIds.length) return;
     if (MODES[p.get('m')] && p.get('m') !== 'online') settings.mode = p.get('m');
     if (DIFFICULTY[p.get('d')]) settings.difficulty = p.get('d');
-    if (['5', '10', '15', '20'].includes(p.get('r'))) settings.rounds = p.get('r');
-    if (['25', '100'].includes(p.get('p'))) settings.pool = p.get('p');
+    if (['5', '10', '15', '20', '30'].includes(p.get('r'))) settings.rounds = p.get('r');
+    if (['50', '100', 'all'].includes(p.get('p'))) settings.pool = p.get('p');
     if (['title', 'artist'].includes(p.get('g'))) settings.guess = p.get('g');
     settings.play = 'solo';
     renderSettings();
@@ -400,7 +460,7 @@
       banner.id = 'challengeBanner';
       banner.className = 'panel challenge';
       banner.innerHTML = `<div class="challenge-ico">⚔️</div><div><h2>Défi reçu !</h2><p><b>${esc(BT.challenge.name)}</b> a fait <b>${score} pts</b> sur ${esc([...selected.values()].map((s) => s.name).join(', '))} en mode ${MODES[settings.mode]} (${DIFFICULTY[settings.difficulty].label}). Tout est réglé : à toi de le battre !</p></div><button class="btn" id="challengeGo">Relever le défi ➜</button>`;
-      $('.features').after(banner);
+      $('.hero').after(banner);
       $('#challengeGo').addEventListener('click', () => $('#startBtn').click());
     }
     history.replaceState(null, '', location.pathname + (p.get('peer') ? `?peer=${encodeURIComponent(p.get('peer'))}` : ''));

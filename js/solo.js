@@ -17,7 +17,7 @@
     $('#loadingText').textContent = `Chargement : ${sources.map((s) => s.name).join(', ')}…`;
     let pool;
     try {
-      pool = await BT.loadPool(sources, opts);
+      pool = await BT.loadPool(sources, opts, (txt) => { $('#loadingText').textContent = `Chargement de toute la discographie… ${txt}`; });
     } catch (err) {
       BT.homeError(err.message);
       return;
@@ -32,7 +32,7 @@
       total: opts.mode === 'classic' ? Math.min(+opts.rounds, queue.length) : queue.length,
       index: -1, score: 0, streak: 0, bestStreak: 0, lives: LIVES, chronoLeft: CHRONO_TIME,
       correct: 0, answered: 0, times: [], history: [],
-      jokers: { fifty: true, hint: true, skip: true }, usedJoker: false,
+      jokers: { fifty: true, hint: true, skip: true }, usedJoker: false, dots: [],
       over: false,
     };
     if (opts.mode === 'classic' && queue.length < +opts.rounds) toast(`Seulement ${queue.length} morceaux disponibles : la partie sera plus courte.`);
@@ -48,9 +48,16 @@
     $('#playEmojiBar').classList.add('hidden');
     $('#replayBtn').classList.remove('hidden');
     document.body.dataset.playMode = 'solo';
+    $('#pauseBtn').classList.remove('hidden');
+    Quiz.setDots([], opts.mode === 'classic' ? game.total : 0, 0);
+    $('#flip').classList.remove('flipped');
+    $('#answers').innerHTML = '';
+    $('#reveal').innerHTML = `<span class="r-sub">🎵 ${pool.count} morceaux chargés</span>`;
     show('play');
     Quiz.combo(null);
-    next();
+    const g = game;
+    await BT.countdown(3);
+    if (game === g && !g.over) next();
   }
 
   function finished() {
@@ -81,6 +88,7 @@
     const question = BT.makeQuestion(g.pool, track);
     g.current = { track, question, hinted: false };
     updateHud();
+    if (g.opts.mode === 'classic') Quiz.setDots(g.dots, g.total, g.index);
     const chrono = g.opts.mode === 'chrono';
     Quiz.ask({
       preview: track.preview,
@@ -91,6 +99,7 @@
       jokers: { ...g.jokers },
       onAnswer: (choice, elapsed) => onAnswer(g, choice, elapsed),
       onJoker: (type) => onJoker(g, type),
+      onPause: () => Quiz.pause(),
       onError: () => {
         if (game !== g || g.over) return;
         toast('Extrait indisponible, morceau suivant…');
@@ -154,6 +163,8 @@
     }
     if (status !== 'skip') g.answered++;
 
+    g.dots[g.index] = status;
+    if (g.opts.mode === 'classic') Quiz.setDots(g.dots, g.total, -1);
     g.history.push({ track, status, points, time: elapsed, picked: typeof choice === 'number' ? question.choices[choice].label : null });
 
     Quiz.reveal({
@@ -220,7 +231,7 @@
     $('#rankEmoji').textContent = emoji;
     $('#rankTitle').textContent = title;
     $('#rankSub').textContent = `${sub} · ${g.sources.map((s) => s.name).join(', ')} · ${MODES[g.opts.mode]} · ${DIFFICULTY[g.opts.difficulty].label}`;
-    $('#finalScore').textContent = g.score;
+    BT.countUp($('#finalScore'), g.score);
     $('#newRecord').classList.toggle('hidden', !isRecord);
     $('#statCorrect').textContent = `${g.correct}/${g.answered}`;
     $('#statAccuracy').textContent = `${acc}%`;
@@ -288,14 +299,21 @@
     await BT.shareOrCopy({ title: 'BlindTest', text, url }, $('#shareMsg'), 'Lien du défi copié ! Envoie-le à tes potes.');
   });
 
-  $('#quitBtn').addEventListener('click', () => {
+  async function quit() {
     if (document.body.dataset.playMode === 'online') { BT.Online.leave(true); return; }
-    if (!confirm('Quitter la partie ? Ton score ne sera pas enregistré.')) return;
+    const wasPaused = Quiz.isPaused();
+    if (!wasPaused) Quiz.pause();
+    const ok = await BT.confirmBox('Quitter la partie ? Ton score ne sera pas enregistré.', { ok: 'Quitter', cancel: 'Continuer', danger: true });
+    if (!ok) { if (!wasPaused) Quiz.resume(); return; }
     if (game) game.over = true;
     Quiz.stop();
     show('home');
-  });
+  }
+  $('#quitBtn').addEventListener('click', quit);
+  $('#pauseQuit').addEventListener('click', quit);
+  $('#pauseBtn').addEventListener('click', () => Quiz.pause());
+  $('#pauseResume').addEventListener('click', () => Quiz.resume());
 
-  BT.Solo = { start, isRunning: () => !!game && !game.over, abort: () => { if (game) game.over = true; Quiz.stop(); } };
+  BT.Solo = { start, quit, isRunning: () => !!game && !game.over, abort: () => { if (game) game.over = true; Quiz.stop(); } };
   BT.renderRecap = renderRecap;
 })();

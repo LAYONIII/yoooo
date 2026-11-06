@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>BlindTest — Trouve le bon titre</title>
-  <meta name="description" content="Blind test musical en solo ou en ligne avec tes potes : choisis tes artistes, écoute l'extrait et trouve le bon titre parmi 4 propositions.">
+  <meta name="description" content="Blind test musical en solo ou en ligne avec tes potes : plus de 300 artistes, rap, pop, variété, légendes… Écoute l'extrait et trouve le bon titre.">
   <meta name="theme-color" content="#07070d">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
@@ -15,6 +15,8 @@
 </head>
 <body>
   <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
+  <canvas id="bg3d" aria-hidden="true"></canvas>
+  <div class="cursor-glow" aria-hidden="true"></div>
   <canvas id="confetti" aria-hidden="true"></canvas>
 
   <header class="topbar">
@@ -38,58 +40,62 @@
     <section id="screen-home" class="screen active">
       <div class="hero">
         <div class="hero-text">
-          <span class="pill">🔥 Nouveau : mode en ligne entre potes</span>
+          <span class="pill"><span class="live-dot"></span> Plus de 300 artistes · Solo &amp; en ligne</span>
           <h1>Le blind test qui<br>teste <span class="grad">les vrais fans</span>.</h1>
-          <p>Choisis tes artistes ou une playlist, écoute l'extrait et trouve le bon titre avant les autres. En solo ou en ligne, sur PC comme sur téléphone.</p>
-          <div class="hero-cta">
-            <button class="btn btn-lg" data-scroll="setup" data-play="solo">🎧 Jouer en solo</button>
-            <button class="btn btn-lg btn-glass" data-scroll="setup" data-play="online">🌐 Créer un salon en ligne</button>
+          <p>Rap, pop, variété, légendes… Choisis tes artistes, écoute l'extrait et trouve le bon titre avant tout le monde.</p>
+
+          <div class="modes">
+            <button class="mode-card" data-tilt="14" data-play="solo">
+              <span class="mode-ico">🎧</span>
+              <b>Solo</b>
+              <span>Classique, Survie ou Chrono</span>
+            </button>
+            <button class="mode-card" data-tilt="14" data-play="online">
+              <span class="mode-ico">🌐</span>
+              <b>Créer un salon</b>
+              <span>Joue en ligne avec tes potes</span>
+            </button>
+            <form class="mode-card join-card" id="joinForm" autocomplete="off" data-tilt="8">
+              <span class="mode-ico">🔑</span>
+              <b>Rejoindre</b>
+              <div class="join-row">
+                <input id="joinCode" maxlength="6" placeholder="CODE" spellcheck="false" autocapitalize="characters" aria-label="Code du salon">
+                <button class="btn btn-sm" type="submit" aria-label="Rejoindre">➜</button>
+              </div>
+            </form>
           </div>
-          <form class="join" id="joinForm" autocomplete="off">
-            <label for="joinCode">Un pote t'a donné un code ?</label>
-            <div class="join-row">
-              <input id="joinCode" maxlength="6" placeholder="CODE" spellcheck="false" autocapitalize="characters">
-              <button class="btn" type="submit">Rejoindre ➜</button>
-            </div>
-          </form>
+          <button class="quick-btn" id="quickPlay"><span>⚡</span> Partie rapide : un artiste au hasard, c'est parti !</button>
         </div>
         <div class="hero-visual" aria-hidden="true">
-          <div class="turntable">
+          <canvas id="hero3d"></canvas>
+          <div class="turntable fallback">
             <div class="vinyl spinning big"><div class="vinyl-label">🎧</div></div>
             <div class="tonearm"></div>
           </div>
-          <span class="note n1">♪</span><span class="note n2">♫</span><span class="note n3">♬</span>
         </div>
       </div>
 
-      <div class="features">
-        <div class="feature"><b>🎵 Des millions de titres</b><span>Tous les artistes de Deezer</span></div>
-        <div class="feature"><b>🌐 Multijoueur</b><span>Salon privé avec un code</span></div>
-        <div class="feature"><b>🏅 12 succès</b><span>À débloquer en jouant</span></div>
-        <div class="feature"><b>📱 Installable</b><span>Comme une vraie appli</span></div>
-      </div>
-
-      <div id="setup" class="panel">
-        <div class="step-title"><span class="step">1</span><h2>Choisis ta musique</h2></div>
+      <div id="setup" class="panel setup">
+        <div class="step-title"><span class="step">1</span><h2>Choisis ta musique</h2><span class="step-hint">jusqu'à 8 artistes ou playlists</span></div>
         <form id="searchForm" class="search" autocomplete="off">
           <span class="search-ico">🔎</span>
-          <input id="searchInput" type="search" placeholder="Rechercher un artiste : Ninho, Drake, Aya Nakamura…" aria-label="Rechercher un artiste">
+          <input id="searchInput" type="search" placeholder="Rechercher n'importe quel artiste sur Deezer…" aria-label="Rechercher un artiste">
         </form>
         <div id="searchResults" class="artist-grid compact"></div>
-
-        <div class="tabs" role="tablist">
-          <button class="tab active" data-cat="fr">🇫🇷 Rap FR</button>
-          <button class="tab" data-cat="us">🇺🇸 Rap US</button>
-          <button class="tab" data-cat="pop">💃 Pop / R&amp;B</button>
-          <button class="tab" data-cat="charts">📈 Playlists</button>
-          <button class="tab" data-cat="recent">🕘 Récents</button>
-        </div>
-        <div id="presets" class="artist-grid"></div>
 
         <div id="selectedWrap" class="selected-wrap hidden">
           <div class="selected-head"><h3>Ta sélection <span id="selectedCount"></span></h3><button class="link-btn" id="clearSel">Tout retirer</button></div>
           <div id="selected" class="chips"></div>
         </div>
+
+        <div class="cat-bar">
+          <div class="tabs" id="tabs" role="tablist"></div>
+        </div>
+        <div class="cat-head">
+          <p id="catDesc" class="muted"></p>
+          <button class="btn btn-glass btn-sm" id="randomPick" title="Ajoute un artiste au hasard de cette catégorie">🎲 Au hasard</button>
+        </div>
+        <div id="presets" class="artist-grid"></div>
 
         <div class="step-title"><span class="step">2</span><h2>Règle ta partie</h2></div>
         <div class="settings">
@@ -111,7 +117,7 @@
           <div class="setting" data-only="rounds">
             <span class="label">Questions</span>
             <div class="seg" data-setting="rounds">
-              <button data-value="5">5</button><button data-value="10">10</button><button data-value="15">15</button><button data-value="20">20</button>
+              <button data-value="5">5</button><button data-value="10">10</button><button data-value="15">15</button><button data-value="20">20</button><button data-value="30">30</button>
             </div>
           </div>
           <div class="setting">
@@ -132,15 +138,23 @@
           <div class="setting">
             <span class="label">Morceaux</span>
             <div class="seg" data-setting="pool">
-              <button data-value="25">⭐ Les hits</button>
-              <button data-value="100">📀 Toute la disco</button>
+              <button data-value="50" title="Les 50 titres les plus écoutés">⭐ Les hits</button>
+              <button data-value="100" title="Les 100 titres les plus écoutés">📀 Top 100</button>
+              <button data-value="all" title="Tous les albums, EP et singles">💿 Toute la disco</button>
             </div>
           </div>
         </div>
         <p class="setting-help" id="settingHelp"></p>
 
-        <button id="startBtn" class="btn btn-xl" disabled>Choisis au moins un artiste</button>
+        <button id="startBtn" class="btn btn-xl" disabled>Choisis au moins un artiste ou une playlist</button>
         <p id="homeError" class="error hidden"></p>
+      </div>
+
+      <!-- barre toujours visible avec la sélection et le bouton Jouer -->
+      <div class="action-bar hidden" id="actionBar">
+        <div class="ab-faces" id="abFaces"></div>
+        <div class="ab-text"><b id="abTitle"></b><span id="abSub"></span></div>
+        <button class="btn" id="abPlay">▶ Jouer</button>
       </div>
     </section>
 
@@ -149,6 +163,7 @@
       <div class="loader">
         <div class="vinyl spinning"><div class="vinyl-label">🎧</div></div>
         <p id="loadingText">Chargement des morceaux…</p>
+        <div class="load-bar"><i></i></div>
       </div>
     </section>
 
@@ -156,10 +171,10 @@
     <section id="screen-lobby" class="screen">
       <div class="lobby">
         <div class="panel lobby-main">
-          <span class="pill">🌐 Salon en ligne</span>
+          <span class="pill"><span class="live-dot"></span> Salon en ligne</span>
           <h1 class="room-title">Code du salon</h1>
           <button class="room-code" id="roomCode" title="Copier le lien d'invitation">------</button>
-          <p class="muted center">Tes potes vont sur le site, cliquent sur « Rejoindre » et entrent ce code. Tu peux aussi leur envoyer le lien.</p>
+          <p class="muted center">Tes potes cliquent sur « Rejoindre » et tapent ce code, ou ouvrent directement le lien.</p>
           <div class="row-center">
             <button class="btn btn-glass" id="copyInvite">🔗 Copier le lien</button>
             <button class="btn btn-glass" id="shareInvite">📤 Partager</button>
@@ -185,6 +200,7 @@
       <div class="play-layout">
         <div class="play-main">
           <div class="hud" id="hud"></div>
+          <div class="dots-progress" id="dots"></div>
 
           <div class="stage">
             <div class="disc-wrap">
@@ -192,16 +208,18 @@
                 <circle cx="60" cy="60" r="56" class="ring-bg"/>
                 <circle cx="60" cy="60" r="56" class="ring-fg" id="ringFg"/>
               </svg>
-              <div class="vinyl" id="vinyl">
-                <img id="cover" alt="" class="hidden">
-                <div class="vinyl-label" id="vinylLabel">?</div>
+              <div class="flip" id="flip">
+                <div class="face front">
+                  <div class="vinyl" id="vinyl"><div class="vinyl-label" id="vinylLabel">?</div></div>
+                </div>
+                <div class="face back"><img id="cover" alt="Pochette"></div>
               </div>
               <div class="time-left" id="timeLeft"></div>
               <div class="combo hidden" id="combo"></div>
             </div>
             <canvas id="bars" class="bars" width="600" height="60" aria-hidden="true"></canvas>
             <div class="question-label" id="questionLabel">Quel est ce titre ?</div>
-            <div class="reveal" id="reveal"></div>
+            <div class="reveal" id="reveal" aria-live="polite"></div>
           </div>
 
           <div class="answers" id="answers"></div>
@@ -211,10 +229,11 @@
             <button class="btn btn-glass" id="jokerHint" title="Donne un indice mais divise les points par 2">💡 Indice</button>
             <button class="btn btn-glass" id="jokerSkip" title="Passer sans pénalité">⏭️ Passer</button>
             <button class="btn btn-glass" id="replayBtn" title="Réécouter (Espace)">🔁 Réécouter</button>
+            <button class="btn btn-glass" id="pauseBtn" title="Pause (Échap)">⏸️ Pause</button>
             <button class="btn hidden" id="nextBtn">Suivant ➜</button>
           </div>
           <div class="emoji-bar hidden" id="playEmojiBar" data-emoji-bar></div>
-          <p class="hint">Touches <kbd>1</kbd>–<kbd>4</kbd> pour répondre · <kbd>Espace</kbd> pour réécouter · <kbd>Entrée</kbd> pour passer à la suite</p>
+          <p class="hint">Touches <kbd>1</kbd>–<kbd>4</kbd> pour répondre · <kbd>Espace</kbd> pour réécouter · <kbd>Entrée</kbd> pour passer à la suite · <kbd>Échap</kbd> pour mettre en pause</p>
           <button class="link-btn" id="quitBtn">Quitter la partie</button>
         </div>
         <aside class="scoreboard hidden" id="scoreboardWrap">
@@ -222,21 +241,30 @@
           <ol id="scoreboard" class="live-board"></ol>
         </aside>
       </div>
+      <div class="pause-overlay hidden" id="pauseOverlay">
+        <div class="pause-box">
+          <div class="pause-ico">⏸️</div>
+          <h2>Pause</h2>
+          <p class="muted">Le chrono est arrêté. Prends ton temps.</p>
+          <button class="btn btn-xl" id="pauseResume">▶ Reprendre</button>
+          <button class="link-btn danger" id="pauseQuit">Quitter la partie</button>
+        </div>
+      </div>
     </section>
 
     <!-- ================= RÉSULTATS SOLO ================= -->
     <section id="screen-results" class="screen">
       <div class="panel results">
-        <div class="rank" id="rankEmoji">🏆</div>
+        <div class="medal" id="rankEmoji">🏆</div>
         <h1 id="rankTitle">Bien joué !</h1>
         <p id="rankSub" class="muted"></p>
         <div class="big-score"><span id="finalScore">0</span><small>pts</small></div>
         <p id="newRecord" class="new-record hidden">🎉 Nouveau record !</p>
         <div class="stats-row">
-          <div><b id="statCorrect">0/0</b><span>Bonnes réponses</span></div>
-          <div><b id="statAccuracy">0%</b><span>Précision</span></div>
-          <div><b id="statBestStreak">0</b><span>Meilleure série</span></div>
-          <div><b id="statAvgTime">0 s</b><span>Temps moyen</span></div>
+          <div data-tilt="10"><b id="statCorrect">0/0</b><span>Bonnes réponses</span></div>
+          <div data-tilt="10"><b id="statAccuracy">0%</b><span>Précision</span></div>
+          <div data-tilt="10"><b id="statBestStreak">0</b><span>Meilleure série</span></div>
+          <div data-tilt="10"><b id="statAvgTime">0 s</b><span>Temps moyen</span></div>
         </div>
         <div class="result-actions">
           <button class="btn btn-xl" id="replaySameBtn">🔁 Rejouer</button>
@@ -271,7 +299,17 @@
     </section>
   </main>
 
-  <!-- ================= FENÊTRES ================= -->
+  <!-- ================= SUPERPOSITIONS ================= -->
+  <div class="countdown hidden" id="countdown" aria-live="assertive"></div>
+
+  <dialog id="confirmDialog" class="dialog dialog-sm">
+    <p id="confirmText" class="confirm-text"></p>
+    <div class="confirm-actions">
+      <button class="btn btn-glass" id="confirmCancel">Annuler</button>
+      <button class="btn" id="confirmOk">Oui</button>
+    </div>
+  </dialog>
+
   <dialog id="statsDialog" class="dialog">
     <form method="dialog"><button class="close" aria-label="Fermer">✕</button></form>
     <h2>🏆 Classement</h2>
@@ -316,12 +354,12 @@
     <form method="dialog"><button class="close" aria-label="Fermer">✕</button></form>
     <h2>❔ Comment jouer</h2>
     <ul class="rules">
-      <li>Choisis <b>un ou plusieurs artistes</b>, ou une <b>playlist</b> (les tops du moment). Avec plusieurs choix, les morceaux sont mélangés.</li>
+      <li>Choisis <b>un ou plusieurs artistes</b> (plus de 300 suggestions, ou n'importe quel artiste avec la recherche) ou une <b>playlist</b>. Avec plusieurs choix, les morceaux sont mélangés.</li>
+      <li><b>Morceaux</b> : ⭐ les hits (50 titres), 📀 le top 100, ou 💿 <b>toute la disco</b> (tous les albums, EP et singles : parfait pour les vrais fans).</li>
       <li>Un <b>extrait</b> se lance. Trouve <b>le titre</b> (ou <b>l'artiste</b> en mode « Qui chante ? ») parmi 4 propositions.</li>
-      <li><b>Points</b> : 100 par bonne réponse, plus un <b>bonus de vitesse</b> qui va jusqu'à 100.</li>
-      <li><b>Série</b> : les points sont multipliés par <b>×1,5</b> à partir de 3 bonnes réponses d'affilée, et par <b>×2</b> à partir de 5.</li>
-      <li><b>Jokers en solo</b> (un de chaque par partie) : ✂️ 50/50, 💡 Indice (les points de la question sont divisés par 2), ⏭️ Passer.</li>
-      <li><b>Modes solo</b> : 🎯 Classique (5 à 20 questions) · ❤️ Survie (3 vies) · ⏱️ Chrono (90 s, une erreur coûte 5 s).</li>
+      <li><b>Points</b> : 100 par bonne réponse, plus un <b>bonus de vitesse</b> qui va jusqu'à 100. Les points sont multipliés par <b>×1,5</b> à partir de 3 bonnes réponses d'affilée, et par <b>×2</b> à partir de 5.</li>
+      <li><b>Jokers en solo</b> (un de chaque par partie) : ✂️ 50/50, 💡 Indice (les points de la question sont divisés par 2), ⏭️ Passer. <kbd>Échap</kbd> met la partie en pause.</li>
+      <li><b>Modes solo</b> : 🎯 Classique (5 à 30 questions) · ❤️ Survie (3 vies) · ⏱️ Chrono (90 s, une erreur coûte 5 s).</li>
       <li><b>En ligne</b> : crée un salon et donne le code à tes potes. Tout le monde entend le même extrait en même temps. Le <b>premier</b> à trouver la bonne réponse gagne <b>+50 pts</b>.</li>
       <li><b>Difficulté</b> : Facile = 20 s, Normal = 12 s, Difficile = 6 s avec un passage pris au hasard dans le morceau.</li>
     </ul>
@@ -333,9 +371,11 @@
   <audio id="recapAudio" preload="none"></audio>
 
   <script src="js/core.js"></script>
+  <script src="js/artists.js"></script>
   <script src="js/quiz.js"></script>
   <script src="js/solo.js"></script>
   <script src="js/online.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/fx3d.js"></script>
 </body>
 </html>
