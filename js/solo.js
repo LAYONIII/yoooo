@@ -24,9 +24,10 @@
     }
     BT.trackPlayed(sources);
     BT.addRecent(sources);
+    BT.lastGame = { type: 'quiz', sources, opts };
 
     const diff = DIFFICULTY[opts.difficulty];
-    const queue = BT.shuffle(pool.tracks);
+    const queue = BT.freshShuffle(pool.tracks);
     game = {
       sources, opts, diff, pool, queue,
       total: opts.mode === 'classic' ? Math.min(+opts.rounds, queue.length) : queue.length,
@@ -196,6 +197,7 @@
     g.over = true;
     Quiz.stop();
     BT.sfx('end');
+    BT.markPlayed(g.history.map((h) => h.track.id));
 
     const acc = g.answered ? Math.round((g.correct / g.answered) * 100) : 0;
     const avg = g.times.length ? g.times.reduce((a, b) => a + b, 0) / g.times.length : 0;
@@ -228,6 +230,7 @@
       [0, '🙈', 'Aïe…', "T'es sûr que tu écoutes ça ?"],
     ];
     const [, emoji, title, sub] = ranks.find(([min]) => acc >= min);
+    $('.results .stats-row').innerHTML = DEFAULT_STATS;
     $('#rankEmoji').textContent = emoji;
     $('#rankTitle').textContent = title;
     $('#rankSub').textContent = `${sub} · ${g.sources.map((s) => s.name).join(', ')} · ${MODES[g.opts.mode]} · ${DIFFICULTY[g.opts.difficulty].label}`;
@@ -250,6 +253,21 @@
     renderRecap($('#recap'), g.history);
     show('results');
     if (acc >= 70 || (isRecord && acc >= 50)) setTimeout(() => BT.confetti(), 300);
+  }
+
+  // ---------- Écran de résultats générique (utilisé par les battles) ----------
+  const DEFAULT_STATS = $('.results .stats-row').innerHTML;
+  function showResults({ emoji, title, sub, score, stats, recap, confetti }) {
+    $('#rankEmoji').textContent = emoji;
+    $('#rankTitle').textContent = title;
+    $('#rankSub').textContent = sub;
+    BT.countUp($('#finalScore'), score);
+    $('#newRecord').classList.add('hidden');
+    $('#shareMsg').classList.add('hidden');
+    $('.results .stats-row').innerHTML = stats.map(([v, l]) => `<div data-tilt="10"><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join('');
+    renderRecap($('#recap'), recap);
+    show('results');
+    if (confetti) setTimeout(() => BT.confetti(), 300);
   }
 
   // ---------- Récap (partagé avec le mode en ligne) ----------
@@ -284,9 +302,21 @@
   recapAudio.addEventListener('ended', () => $$('.recap .play').forEach((b) => (b.textContent = '▶')));
 
   // ---------- Boutons de l'écran de résultats ----------
-  $('#replaySameBtn').addEventListener('click', () => { recapAudio.pause(); start(game.sources, game.opts); });
+  $('#replaySameBtn').addEventListener('click', () => {
+    recapAudio.pause();
+    const last = BT.lastGame;
+    if (last && last.type === 'battle') BT.Battle.start(last.sources, last.opts);
+    else start(game.sources, game.opts);
+  });
   $('#homeBtn').addEventListener('click', () => { recapAudio.pause(); show('home'); });
   $('#shareBtn').addEventListener('click', async () => {
+    const last = BT.lastGame;
+    if (last && last.type === 'battle') {
+      const url = `${location.origin}${location.pathname}`;
+      const text = `⚔️ J'ai fait ${$('#finalScore').textContent} pts en Battle sur BlindTest (${last.sources.map((s) => s.name).join(' / ')}). À toi de jouer !`;
+      await BT.shareOrCopy({ title: 'BlindTest', text, url }, $('#shareMsg'), 'Message copié ! Envoie-le à tes potes.');
+      return;
+    }
     const g = game;
     const params = new URLSearchParams({
       a: g.sources.filter((s) => s.type === 'artist').map((s) => s.id).join(','),
@@ -314,6 +344,6 @@
   $('#pauseBtn').addEventListener('click', () => Quiz.pause());
   $('#pauseResume').addEventListener('click', () => Quiz.resume());
 
-  BT.Solo = { start, quit, isRunning: () => !!game && !game.over, abort: () => { if (game) game.over = true; Quiz.stop(); } };
+  BT.Solo = { start, quit, showResults, isRunning: () => !!game && !game.over, abort: () => { if (game) game.over = true; Quiz.stop(); } };
   BT.renderRecap = renderRecap;
 })();

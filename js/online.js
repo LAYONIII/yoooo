@@ -17,6 +17,7 @@
   const GRACE = 3500;         // marge (ms) pour le chargement de l'extrait et le réseau
   const MAX_PLAYERS = 12;
   const FIRST_BONUS = 50;
+  const DUEL_TIME = 45;       // secondes pour écouter et voter en battle
   const EMOJIS = ['🔥', '😂', '😱', '👏', '💀', '🐐', '😭', '🤯'];
   const PEERJS_URLS = [
     'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
@@ -74,7 +75,9 @@
   const configSummary = () => ({
     sources: S.config.sources.map((s) => ({ name: s.name, picture: s.picture || '', emoji: s.emoji || '' })),
     rounds: S.config.opts.rounds, difficulty: S.config.opts.difficulty, guess: S.config.opts.guess, pool: S.config.opts.pool,
+    game: S.config.opts.game || 'quiz', duel: S.config.opts.duel || 'diff',
   });
+  const isBattle = () => S.config && S.config.opts.game && S.config.opts.game !== 'quiz';
 
   function inviteUrl() {
     const params = new URLSearchParams({ room: S.code });
@@ -147,7 +150,9 @@
     }
     if (!S.players.has(id)) return;
     if (msg.t === 'answer') {
-      if (S.round && msg.round === S.round.index) registerAnswer(id, msg.choice, msg.time);
+      if (S.round && !S.round.isDuel && msg.round === S.round.index) registerAnswer(id, msg.choice, msg.time);
+    } else if (msg.t === 'vote') {
+      if (S.round && S.round.isDuel && msg.round === S.round.index) registerVote(id, msg.pick);
     } else if (msg.t === 'emoji' && EMOJIS.includes(msg.e)) {
       const out = { t: 'emoji', from: id, e: msg.e };
       broadcast(out);
@@ -179,7 +184,8 @@
     show('loading');
     $('#loadingText').textContent = text;
     try {
-      S.pool = await BT.loadPool(S.config.sources, S.config.opts, (txt) => { $('#loadingText').textContent = `Chargement de toute la discographie… ${txt}`; });
+      S.pool = await BT.loadPool(S.config.sources, isBattle() ? { pool: S.config.opts.pool, guess: 'title' } : S.config.opts, (txt) => { $('#loadingText').textContent = `Chargement… ${txt}`; });
+      if (isBattle()) BT.Battle.checkPool(S.pool, S.config.opts.duel);
     } catch (err) {
       S.state = 'lobby';
       sendLobby();
@@ -189,21 +195,84 @@
     }
     BT.trackPlayed(S.config.sources);
     BT.addRecent(S.config.sources);
-    S.queue = BT.shuffle(S.pool.tracks);
-    S.total = Math.min(+S.config.opts.rounds, S.queue.length);
+    S.queue = BT.freshShuffle(S.pool.tracks);
+    S.total = isBattle() ? +S.config.opts.rounds : Math.min(+S.config.opts.rounds, S.queue.length);
+    S.used = new Set();
     S.index = -1;
     S.history = [];
     S.players.forEach((p) => Object.assign(p, { score: 0, streak: 0, correct: 0, lastPoints: 0 }));
     // compte à rebours synchronisé chez tout le monde, puis première question
-    const msg = { t: 'countdown', total: S.total, count: S.pool.count, players: playerList() };
+    const msg = { t: 'countdown', total: S.total, count: S.pool.count, players: playerList(), game: S.config.opts.game || 'quiz' };
     broadcast(msg);
     onCountdown(msg);
-    later(nextRound, 3400);
+    later(isBattle() ? nextDuel : nextRound, 3400);
+  }
+
+  // ---------- Battle en ligne (hôte) ----------
+  function nextDuel() {
+    if (!S.isHost || S.leaving) return;
+    S.index++;
+    const d = S.index < S.total ? BT.Battle.buildDuel(S.pool, S.config.opts.duel, S.used) : null;
+    if (!d) { endGame(); return; }
+    const theme = S.config.opts.game === 'theme' ? BT.Battle.randomTheme() : null;
+    S.round = { index: S.index, isDuel: true, a: d.a, b: d.b, theme, votes: new Map(), finished: false };
+    S.state = 'duel';
+    const msg = { t: 'duel', round: S.index, total: S.total, theme, a: BT.Battle.slim(d.a), b: BT.Battle.slim(d.b), players: playerList() };
+    broadcast(msg);
+    onDuel(msg);
+    S.round.timer = later(finishDuel, DUEL_TIME * 1000 + GRACE);
+  }
+
+  function registerVote(id, pick) {
+    const r = S.round;
+    if (!r || r.finished || r.votes.has(id) || !['a', 'b'].includes(pick)) return;
+    r.votes.set(id, pick);
+    const msg = { t: 'voted', ids: [...r.votes.keys()] };
+    broadcast(msg);
+    markAnswered(msg.ids);
+    checkAllAnswered();
+  }
+
+  async function finishDuel() {
+    const r = S.round;
+    if (!r || r.finished) return;
+    r.finished = true;
+    clearTimeout(r.timer);
+    broadcast({ t: 'judging' });
+    onJudging();
+    const verdict = await BT.Battle.judge(r.theme, r.a, r.b);
+    if (!S.isHost || S.leaving || S.round !== r) return;
+    let ca = 0; let cb = 0;
+    r.votes.forEach((v) => { if (v === 'a') ca++; else cb++; });
+    const majority = ca > cb ? 'a' : cb > ca ? 'b' : null;
+    const winner = majority || verdict.ai.pick;
+    const results = [];
+    S.players.forEach((p, id) => {
+      const pick = r.votes.get(id) || null;
+      const points = (majority && pick === majority ? 100 : 0) + (pick && pick === verdict.ai.pick ? 50 : 0);
+      p.score += points;
+      p.lastPoints = points;
+      if (points > 0) p.correct++;
+      results.push({ id, choice: pick, points });
+    });
+    S.history.push({ track: BT.Battle.slim(r[winner]), results, battle: { a: r.a.title, b: r.b.title, theme: r.theme ? `${r.theme.emoji} ${r.theme.label}` : '' } });
+    S.state = 'reveal';
+    const msg = { t: 'duelResult', round: r.index, votes: Object.fromEntries(r.votes), winner, majority, counts: { a: ca, b: cb }, ai: verdict.ai, public: verdict.public, players: playerList(), last: r.index + 1 >= S.total };
+    broadcast(msg);
+    onDuelResult(msg);
+    later(nextDuel, 9000);
   }
 
   function onCountdown(msg) {
     S.myDots = [];
     if (msg.players) S.players = new Map(msg.players.map((p) => [p.id, { ...(S.players.get(p.id) || {}), ...p }]));
+    if (msg.game && msg.game !== 'quiz') {
+      setupBattleScreen(msg.total);
+      $('#duelStatus').innerHTML = `🎵 ${msg.count} morceaux · ${msg.total} duels`;
+      renderScoreboard();
+      BT.countdown(3);
+      return;
+    }
     setupPlayScreen();
     Quiz.updateHud('progress', `1/${msg.total}`);
     Quiz.setDots([], msg.total, 0);
@@ -249,10 +318,11 @@
   function checkAllAnswered() {
     const r = S.round;
     if (!r || r.finished) return;
-    if ([...S.players.keys()].every((id) => r.answers.has(id))) {
+    const got = r.isDuel ? r.votes : r.answers;
+    if ([...S.players.keys()].every((id) => got.has(id))) {
       clearTimeout(r.timer);
       S.timers.delete(r.timer);
-      r.timer = later(finishRound, 700);
+      r.timer = later(r.isDuel ? finishDuel : finishRound, 700);
     }
   }
 
@@ -291,6 +361,7 @@
 
   function endGame() {
     S.state = 'end';
+    BT.markPlayed(S.history.map((h) => h.track.id));
     S.round = null;
     const msg = endMessage();
     broadcast(msg);
@@ -351,6 +422,10 @@
       case 'countdown': onCountdown(msg); break;
       case 'question': onQuestion(msg); break;
       case 'answered': markAnswered(msg.ids); break;
+      case 'duel': onDuel(msg); break;
+      case 'voted': markAnswered(msg.ids); break;
+      case 'judging': onJudging(); break;
+      case 'duelResult': onDuelResult(msg); break;
       case 'reveal': onReveal(msg); break;
       case 'end': onEnd(msg); break;
       case 'emoji': showEmoji(msg); break;
@@ -403,10 +478,10 @@
       $('#lobbyConfig').innerHTML = `
         <div class="cfg-sources">${sm.sources.map((s) => `<span class="chip">${s.picture ? `<img src="${esc(s.picture)}" alt="">` : `<span class="mini">${esc(s.emoji || '♪')}</span>`}${esc(s.name)}</span>`).join('')}</div>
         <div class="cfg-tags">
-          <span>❓ ${sm.rounds} questions</span>
-          <span>${sm.guess === 'artist' ? '🎤 Qui chante ?' : '🎵 Le titre'}</span>
-          <span>${{ easy: '😎', normal: '🔥', hard: '💀' }[sm.difficulty]} ${DIFFICULTY[sm.difficulty].label}</span>
-          <span>${sm.pool === '100' ? '📀 Toute la disco' : '⭐ Les hits'}</span>
+          ${sm.game && sm.game !== 'quiz'
+    ? `<span>${sm.game === 'theme' ? '🎲 Battle à thème' : '⚔️ Battle'}</span><span>⚔️ ${sm.rounds} duels</span><span>${sm.duel === 'same' ? '🎤 Même artiste' : '🆚 Artistes différents'}</span>`
+    : `<span>🎯 Blind test</span><span>❓ ${sm.rounds} questions</span><span>${sm.guess === 'artist' ? '🎤 Qui chante ?' : '🎵 Le titre'}</span><span>${{ easy: '😎', normal: '🔥', hard: '💀' }[sm.difficulty]} ${DIFFICULTY[sm.difficulty].label}</span>`}
+          <span>${{ 50: '⭐ Les hits', 100: '📀 Top 100', all: '💿 Toute la disco' }[sm.pool] || '⭐ Les hits'}</span>
         </div>`;
     }
     $('#lobbyHostActions').classList.toggle('hidden', !S.isHost);
@@ -430,6 +505,67 @@
     show('play');
   }
 
+  function setupBattleScreen(total) {
+    document.body.dataset.playMode = 'online';
+    $('#bScoreboardWrap').classList.remove('hidden');
+    $('#bEmojiBar').classList.remove('hidden');
+    $('#duelA').innerHTML = ''; $('#duelB').innerHTML = ''; $('#verdicts').innerHTML = '';
+    $('#bTheme').classList.add('hidden');
+    $('#bNext').classList.add('hidden');
+    BT.Battle.UI.setHud([
+      { id: 'progress', label: 'Duel', value: `1/${total || S.total}` },
+      { id: 'score', label: 'Ton score', value: 0 },
+      { id: 'rank', label: 'Rang', value: '-' },
+      { id: 'players', label: 'Joueurs', value: S.players.size },
+    ]);
+    show('battle');
+  }
+
+  function onDuel(msg) {
+    S.state = 'duel';
+    S.total = msg.total;
+    if (msg.players) S.players = new Map(msg.players.map((p) => [p.id, { ...(S.players.get(p.id) || {}), ...p, lastPoints: 0 }]));
+    if (document.body.dataset.screen !== 'battle' || document.body.dataset.playMode !== 'online') setupBattleScreen(msg.total);
+    updateHud();
+    renderScoreboard(new Set());
+    BT.Battle.UI.showDuel({
+      round: msg.round, total: msg.total, theme: msg.theme, a: msg.a, b: msg.b, online: true,
+      onVote: (side) => {
+        if (S.isHost) registerVote('host', side);
+        else send(S.hostConn, { t: 'vote', round: msg.round, pick: side });
+      },
+    });
+    S.currentDuel = msg;
+  }
+
+  function onJudging() {
+    BT.Battle.UI.lock();
+    BT.Battle.UI.setStatus('<span class="dots"><i></i><i></i><i></i></span> 🤖 Votes terminés, l\'IA donne son verdict…');
+  }
+
+  function onDuelResult(msg) {
+    S.players = new Map(msg.players.map((p) => [p.id, { ...(S.players.get(p.id) || {}), ...p }]));
+    const d = S.currentDuel || {};
+    const bySide = { a: [], b: [] };
+    Object.entries(msg.votes).forEach(([id, side]) => { const p = S.players.get(id); if (p && bySide[side]) bySide[side].push(p); });
+    const me = S.players.get(S.myId);
+    const mine = msg.votes[S.myId] || null;
+    const pts = me ? me.lastPoints : 0;
+    const t = (side) => (d[side] ? `« ${esc(d[side].title)} »` : side.toUpperCase());
+    const room = msg.majority
+      ? `${msg.majority.toUpperCase()} · ${t(msg.majority)} gagne (${Math.max(msg.counts.a, msg.counts.b)} vote${Math.max(msg.counts.a, msg.counts.b) > 1 ? 's' : ''} contre ${Math.min(msg.counts.a, msg.counts.b)})`
+      : `Égalité ${msg.counts.a}-${msg.counts.b} : l'IA départage`;
+    const parts = [];
+    if (!mine) parts.push('⏰ Tu n\'as pas voté');
+    else {
+      parts.push(msg.majority ? (mine === msg.majority ? '✅ Tu as voté comme la majorité' : '❌ La majorité a choisi l\'autre') : '🤝 Égalité dans le salon');
+      parts.push(mine === msg.ai.pick ? "✅ L'IA est d'accord" : "❌ L'IA n'est pas d'accord");
+    }
+    BT.Battle.UI.showResult({ winner: msg.winner, myPick: mine, ai: msg.ai, public: msg.public, votes: bySide, points: pts, room, message: `${parts.join(' · ')}${pts ? ` <b class="good">+${pts} pts</b>` : ''}` });
+    updateHud(pts > 0);
+    renderScoreboard(null, true);
+  }
+
   function myStats() {
     const list = sorted([...S.players.values()]);
     const idx = list.findIndex((p) => p.id === S.myId);
@@ -442,6 +578,11 @@
     const medal = { 1: '🥇 ', 2: '🥈 ', 3: '🥉 ' }[rank] || '';
     Quiz.updateHud('rank', rank ? `${medal}${rank}/${count}` : '-');
     Quiz.updateHud('players', count);
+    const B = BT.Battle.UI;
+    B.updateHud('score', me ? me.score : 0);
+    B.updateHud('rank', rank ? `${medal}${rank}/${count}` : '-');
+    B.updateHud('players', count);
+    if (S.round || S.currentDuel) B.updateHud('progress', `${((S.currentDuel && S.currentDuel.round) || 0) + 1}/${S.total}`);
   }
 
   function onQuestion(msg) {
@@ -511,18 +652,20 @@
 
   function renderScoreboard(answered, showPoints) {
     const list = sorted([...S.players.values()]);
-    $('#scoreboard').innerHTML = list.map((p, i) => {
+    const html = list.map((p, i) => {
       let tag = '';
       if (showPoints) tag = p.lastPoints > 0 ? `<span class="sb-delta">+${p.lastPoints}</span>` : '<span class="sb-delta zero">+0</span>';
       else if (answered && answered.has(p.id)) tag = '<span class="sb-ok" title="A répondu">✔</span>';
       else if (answered) tag = '<span class="sb-wait"><span class="dots"><i></i><i></i><i></i></span></span>';
       return `<li class="${p.id === S.myId ? 'me' : ''}"><span class="sb-rank">${i + 1}</span><span class="sb-avatar">${esc(p.avatar)}</span><span class="sb-name">${esc(p.name)}</span>${tag}<span class="sb-score">${p.score}</span></li>`;
     }).join('');
+    $$('.live-board').forEach((el) => { el.innerHTML = html; });
   }
 
   function onEnd(msg) {
     S.state = 'end';
     Quiz.stop();
+    BT.Battle.UI.stop();
     clearTimeout(S.revealTimer);
     const list = sorted(msg.players);
     S.players = new Map(msg.players.map((p) => [p.id, p]));
@@ -543,11 +686,15 @@
     }).join('');
     $('#ranking').innerHTML = list.slice(3).map((p, i) => `<li class="${p.id === S.myId ? 'me' : ''}"><span class="sb-rank">${i + 4}</span><span class="sb-avatar">${esc(p.avatar)}</span><span class="sb-name">${esc(p.name)}</span><span class="sb-score">${p.score} pts</span></li>`).join('');
     const total = msg.history.length;
-    $('#podiumSub').textContent = me ? `Tu termines ${myRank === 1 ? '1er 🏆' : myRank + 'e'} sur ${list.length} avec ${me.score} pts (${me.correct}/${total} bonnes réponses).` : '';
+    const battle = msg.summary && msg.summary.game && msg.summary.game !== 'quiz';
+    $('#podiumSub').textContent = me ? `Tu termines ${myRank === 1 ? '1er 🏆' : myRank + 'e'} sur ${list.length} avec ${me.score} pts${battle ? '' : ` (${me.correct}/${total} bonnes réponses)`}.` : '';
 
     // récap avec ta réponse pour chaque morceau
     const history = msg.history.map((h) => {
       const mine = h.results.find((r) => r.id === S.myId);
+      if (h.battle) {
+        return { track: h.track, status: mine && mine.points > 0 ? 'ok' : 'ko', detail: `${esc(h.battle.a)} 🆚 ${esc(h.battle.b)}${h.battle.theme ? ` · ${esc(h.battle.theme)}` : ''}${mine && mine.points ? ` · +${mine.points} pts` : ''}` };
+      }
       const winners = h.results.filter((r) => r.points > 0).length;
       const status = !mine ? 'none' : mine.points > 0 ? 'ok' : 'ko';
       const detail = `${status === 'ok' ? `+${mine.points} pts · ` : status === 'ko' ? (mine.choice === null ? 'Temps écoulé · ' : 'Raté · ') : ''}${winners}/${h.results.length} ont trouvé`;
@@ -608,6 +755,7 @@
     S.leaving = true;
     if (S.isHost) broadcast({ t: 'closed' });
     Quiz.stop();
+    BT.Battle.UI.stop();
     const peer = S.peer;
     clearTimers();
     Object.assign(S, { peer: null });

@@ -6,7 +6,7 @@
 window.BT = window.BT || {};
 BT.CATEGORIES = [
   {
-    id: 'fr', label: '🇫🇷 Rap FR', desc: 'La nouvelle génération',
+    id: 'fr', label: '🎤 Rap FR', desc: 'La nouvelle génération',
     artists: ['Ninho', 'Jul', 'PNL', 'Damso', 'SCH', 'Booba', 'Gazo', 'Tiakola', 'Werenoi', 'Nekfeu', 'Orelsan', 'Niska', 'Hamza', 'Naps', 'Zola', 'Koba LaD', 'Leto', 'SDM', 'Freeze Corleone', 'Josman', 'Kalash Criminel', 'Alonzo', "Heuss L'enfoiré", 'Maes', 'Vald', 'Lomepal', 'Bigflo & Oli', 'Laylow', 'Dinos', 'Ziak', 'Gradur', 'Plk', 'Soso Maness', 'Guy2Bezbar', 'La Fève', 'Bouss'],
   },
   {
@@ -14,7 +14,7 @@ BT.CATEGORIES = [
     artists: ['IAM', 'Suprême NTM', 'MC Solaar', "Diam's", 'Rohff', "Sexion d'Assaut", '113', 'Kery James', 'Sinik', 'La Fouine', 'Lunatic', 'Oxmo Puccino', 'Sniper', 'Psy 4 de la Rime', 'Soprano', "Mafia K'1 Fry", 'Fonky Family', 'Médine', 'Youssoupha', 'Disiz', 'Sefyu', 'Akhenaton', 'Passi', 'Lacrim', 'Kaaris', 'Rim\'K', 'Tunisiano', 'Scred Connexion', 'Ministère A.M.E.R.', 'Keny Arkana'],
   },
   {
-    id: 'us', label: '🇺🇸 Rap US', desc: 'Les stars du moment',
+    id: 'us', label: '🗽 Rap US', desc: 'Les stars du moment',
     artists: ['Drake', 'Kendrick Lamar', 'Travis Scott', 'Eminem', 'Kanye West', 'Future', 'J. Cole', '21 Savage', 'Lil Baby', 'Post Malone', 'Nicki Minaj', 'Tyler, The Creator', 'Jay-Z', '50 Cent', 'Snoop Dogg', 'Lil Wayne', 'Cardi B', 'Doja Cat', 'Megan Thee Stallion', 'A$AP Rocky', 'Playboi Carti', 'Lil Uzi Vert', 'Juice WRLD', 'XXXTENTACION', 'Pop Smoke', 'Young Thug', 'Gunna', 'Metro Boomin', 'Mac Miller', 'Childish Gambino', 'Don Toliver', 'Central Cee'],
   },
   {

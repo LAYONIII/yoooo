@@ -69,22 +69,33 @@ window.BT = window.BT || {};
 
   const toArtist = (a) => ({ type: 'artist', id: a.id, name: a.name, picture: a.picture_medium || a.picture || '', fans: a.nb_fan || 0 });
 
+  /** Trie les résultats Deezer : nom identique d'abord, puis le plus de fans (évite les homonymes). */
+  function bestFirst(list, q) {
+    const nq = norm(q).replace(/\s+/g, '');
+    const score = (a) => (norm(a.name).replace(/\s+/g, '') === nq ? 1e12 : 0) + (a.fans || 0);
+    return list.slice().sort((a, b) => score(b) - score(a));
+  }
+
   const api = {
     async search(q, limit = 12) {
-      const res = await jsonp(`/search/artist?q=${encodeURIComponent(q)}&limit=${limit}`);
-      return (res.data || []).map(toArtist);
+      const res = await jsonp(`/search/artist?q=${encodeURIComponent(q)}&limit=${Math.max(limit, 15)}`);
+      return bestFirst((res.data || []).map(toArtist), q).slice(0, limit);
+    },
+    async track(id) {
+      try { return await jsonp(`/track/${id}`); } catch { return null; }
     },
     async artist(id) { return toArtist(await jsonp(`/artist/${id}`)); },
     async related(id) {
       try { const res = await jsonp(`/artist/${id}/related?limit=20`); return (res.data || []).map((a) => a.name); } catch { return []; }
     },
-    presetCache: store.get('presetCache', {}),
+    // v2 : l'ancien cache pouvait contenir des homonymes (mauvaises photos)
+    presetCache: store.get('presetCache2', {}),
     async resolve(name) {
       if (this.presetCache[name]) return this.presetCache[name];
       const [first] = await this.search(name, 1);
       if (!first) throw new Error(`Artiste introuvable : ${name}`);
       this.presetCache[name] = first;
-      store.set('presetCache', this.presetCache);
+      store.set('presetCache2', this.presetCache);
       return first;
     },
   };
@@ -108,7 +119,9 @@ window.BT = window.BT || {};
   function addTracks(list, raw, source, seen, album) {
     for (const t of raw) {
       if (!t || !t.preview || t.readable === false) continue;
-      if (album && source.type === 'artist' && t.artist && t.artist.id && t.artist.id !== source.id) continue;
+      if (album && album !== 'search' && source.type === 'artist' && t.artist && t.artist.id && t.artist.id !== source.id) continue;
+      // recherche par nom : on garde les titres de l'artiste et ses featurings
+      if (album === 'search' && !(t.artist && t.artist.id === source.id) && !norm(t.title).includes(norm(source.name))) continue;
       const title = t.title_short || t.title;
       const n = norm(title);
       if (!n || SKIP.test(n)) continue;
@@ -116,7 +129,7 @@ window.BT = window.BT || {};
       const key = `${n}|${source.type === 'chart' ? artistName : ''}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const alb = album || t.album || {};
+      const alb = (album && album !== 'search' ? album : t.album) || {};
       list.push({
         id: t.id, title, norm: n, preview: t.preview, link: t.link || `https://www.deezer.com/track/${t.id}`,
         album: alb.title || '',
@@ -124,6 +137,9 @@ window.BT = window.BT || {};
         coverSmall: alb.cover_small || alb.cover_medium || '',
         artistName,
         group: sourceKey(source),
+        rank: t.rank || 0,
+        explicit: !!t.explicit_lyrics,
+        duration: t.duration || 0,
       });
     }
   }
@@ -169,6 +185,11 @@ window.BT = window.BT || {};
           return { alb, data: r.data || [] };
         });
         lists.forEach((l) => l && addTracks(tracks, l.data, source, seen, l.alb));
+        // en plus : les titres où l'artiste apparaît (featurings, morceaux hors albums)
+        const q = encodeURIComponent(`artist:"${source.name}"`);
+        const extra = await pool([0, 100, 200], 3, (index) => jsonp(`/search/track?q=${q}&limit=100&index=${index}`));
+        extra.forEach((r) => r && addTracks(tracks, r.data || [], source, seen, 'search'));
+        if (onProgress) onProgress(`${source.name} : ${tracks.length} morceaux`);
       }
     }
     trackCache.set(key, { at: Date.now(), tracks });
@@ -181,7 +202,7 @@ window.BT = window.BT || {};
     normal: { time: 12, randomStart: false, label: 'Normal' },
     hard: { time: 6, randomStart: true, label: 'Difficile' },
   };
-  const MODES = { classic: 'Classique', survival: 'Survie', chrono: 'Chrono', online: 'En ligne' };
+  const MODES = { classic: 'Classique', survival: 'Survie', chrono: 'Chrono', online: 'En ligne', battle: 'Battle', theme: 'Battle à thème' };
 
   /** Charge tous les morceaux des sources choisies et prépare le « pool » de questions. */
   async function loadPool(sources, { pool: size, guess }, onProgress) {
@@ -237,6 +258,17 @@ window.BT = window.BT || {};
     };
   }
 
+  /** Mélange en mettant d'abord les morceaux pas encore entendus récemment. */
+  function freshShuffle(tracks) {
+    const played = new Set(store.get('played', []));
+    const mixed = shuffle(tracks);
+    return [...mixed.filter((t) => !played.has(t.id)), ...mixed.filter((t) => played.has(t.id))];
+  }
+  function markPlayed(ids) {
+    const list = store.get('played', []).filter((id) => !ids.includes(id));
+    store.set('played', [...list, ...ids].slice(-1500));
+  }
+
   const pointsFor = ({ elapsed, time, streak, hinted }) => {
     const speed = Math.round(100 * Math.max(0, 1 - elapsed / time));
     const mult = streak >= 5 ? 2 : streak >= 3 ? 1.5 : 1;
@@ -289,7 +321,7 @@ window.BT = window.BT || {};
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const cv = $('#confetti');
     const ctx = cv.getContext('2d');
-    const resize = () => { cv.width = innerWidth * devicePixelRatio; cv.height = innerHeight * devicePixelRatio; };
+    const resize = () => { cv.width = Math.round(innerWidth * devicePixelRatio); cv.height = Math.round(innerHeight * devicePixelRatio); };
     resize();
     const colors = ['#ff2e93', '#8b5cf6', '#22d3ee', '#facc15', '#34d399', '#fb7185'];
     for (let i = 0; i < count; i++) {
@@ -302,8 +334,10 @@ window.BT = window.BT || {};
     }
     cancelAnimationFrame(confettiRaf);
     const step = () => {
+      if (cv.width !== Math.round(innerWidth * devicePixelRatio) || cv.height !== Math.round(innerHeight * devicePixelRatio)) resize();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, cv.width, cv.height);
       ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-      ctx.clearRect(0, 0, innerWidth, innerHeight);
       confettiParts = confettiParts.filter((p) => p.y < innerHeight + 20 && p.life < 300);
       for (const p of confettiParts) {
         p.vy += 0.35; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.a += p.va; p.life++;
@@ -312,7 +346,7 @@ window.BT = window.BT || {};
         ctx.restore();
       }
       if (confettiParts.length) confettiRaf = requestAnimationFrame(step);
-      else ctx.clearRect(0, 0, innerWidth, innerHeight);
+      else { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height); }
     };
     step();
   }
@@ -384,6 +418,8 @@ window.BT = window.BT || {};
     { id: 'whois', icon: '🎤', name: 'Oreille absolue', desc: 'Au moins 80 % en « Qui chante ? » sur 10 questions ou plus.' },
     { id: 'online', icon: '🌐', name: 'En réseau', desc: 'Joue une partie en ligne.' },
     { id: 'champion', icon: '👑', name: 'Champion', desc: 'Gagne une partie en ligne contre au moins 1 joueur.' },
+    { id: 'battle', icon: '⚔️', name: 'Gladiateur', desc: 'Termine une battle de 5 duels ou plus.' },
+    { id: 'mindreader', icon: '🧠', name: 'Télépathe', desc: "Sois d'accord avec l'IA sur tous les duels d'une battle (5 ou plus)." },
     { id: 'explorer', icon: '🧭', name: 'Explorateur', desc: 'Joue avec 10 artistes ou playlists différents.' },
   ];
   const unlocked = store.get('badges', {});
@@ -410,6 +446,6 @@ window.BT = window.BT || {};
     $, $$, rand, shuffle, esc, initials, fmtFans, fmtSec, sleep, norm, store, toast, show,
     jsonp, api, CHARTS, sourceKey, fetchTracks, loadPool, makeQuestion, pointsFor, multiplierFor,
     DIFFICULTY, MODES, sound, sfx, confetti, AVATARS, profile, saveProfile, displayName,
-    BADGES, unlocked, unlock, trackPlayed, urlParams, countdown, confirmBox, countUp, FX, pool,
+    BADGES, unlocked, unlock, trackPlayed, urlParams, countdown, confirmBox, countUp, FX, pool, freshShuffle, markPlayed,
   });
 })();

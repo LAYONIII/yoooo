@@ -10,9 +10,11 @@
   const CATS = BT.CATEGORIES;
 
   const selected = new Map(); // clé -> source (artiste ou playlist)
-  const settings = Object.assign({ play: 'solo', mode: 'classic', rounds: '10', guess: 'title', difficulty: 'normal', pool: '50' }, store.get('settings2', {}));
+  const settings = Object.assign({ play: 'solo', game: 'quiz', duel: 'diff', mode: 'classic', rounds: '10', guess: 'title', difficulty: 'normal', pool: 'all' }, store.get('settings3', store.get('settings2', {})));
+  if (!settings.game) settings.game = 'quiz';
+  if (!settings.duel) settings.duel = 'diff';
   if (!['50', '100', 'all'].includes(settings.pool)) settings.pool = '50';
-  const saveSettings = () => store.set('settings2', settings);
+  const saveSettings = () => store.set('settings3', settings);
 
   // ---------- Fonctions partagées ----------
   BT.homeError = (msg) => {
@@ -149,7 +151,10 @@
     $('#abFaces').innerHTML = list.slice(0, 4).map((s) => s.type === 'chart' ? `<span class="face-mini">${esc(s.emoji)}</span>` : s.picture ? `<img src="${esc(s.picture)}" alt="">` : `<span class="face-mini">${esc(initials(s.name))}</span>`).join('') + (n > 4 ? `<span class="face-mini more">+${n - 4}</span>` : '');
     $('#abTitle').textContent = n === 1 ? list[0].name : `${n} artistes / playlists`;
     const poolLabel = { 50: 'Les hits', 100: 'Top 100', all: 'Toute la disco' }[settings.pool];
-    $('#abSub').textContent = settings.play === 'online' ? `En ligne · ${settings.rounds} questions · ${poolLabel}`
+    const battle = settings.game !== 'quiz';
+    const gameLabel = { quiz: 'Blind test', battle: 'Battle', theme: 'Battle à thème' }[settings.game];
+    $('#abSub').textContent = battle ? `${gameLabel}${settings.play === 'online' ? ' en ligne' : ''} · ${settings.rounds} duels · ${poolLabel}`
+      : settings.play === 'online' ? `En ligne · ${settings.rounds} questions · ${poolLabel}`
       : `${MODES[settings.mode]}${settings.mode === 'classic' ? ` · ${settings.rounds} questions` : ''} · ${DIFFICULTY[settings.difficulty].label} · ${poolLabel}`;
     $('#abPlay').textContent = settings.play === 'online' ? (BT.Online.isHosting() ? '✔ Salon' : '🌐 Créer') : '▶ Jouer';
   }
@@ -163,11 +168,13 @@
     const what = n === 1 ? names[0] : `${n} choix (mix)`;
     if (n === 0) btn.textContent = 'Choisis au moins un artiste ou une playlist';
     else if (settings.play === 'online') btn.textContent = BT.Online.isHosting() ? '✔ Mettre à jour le salon' : `🌐 Créer le salon · ${what}`;
-    else btn.textContent = `▶ Jouer · ${what}`;
+    else btn.textContent = `${settings.game === 'quiz' ? '▶ Jouer' : '⚔️ Lancer la battle'} · ${what}`;
   }
 
-  let currentCat = 'fr';
-  const TABS = [...CATS.map((c) => ({ id: c.id, label: c.label, desc: `${c.desc} · ${c.artists.length} artistes` })),
+  let currentCat = 'all';
+  const ALL = [...new Set(CATS.flatMap((c) => c.artists))].sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }));
+  const TABS = [{ id: 'all', label: '⭐ Tous', desc: `Tous les artistes, de A à Z · ${ALL.length} artistes` },
+    ...CATS.map((c) => ({ id: c.id, label: c.label, desc: `${c.desc} · ${c.artists.length} artistes` })),
     { id: 'charts', label: '📈 Playlists', desc: 'Les classements Deezer du moment' },
     { id: 'recent', label: '🕘 Récents', desc: 'Les artistes avec qui tu as joué' }];
   $('#tabs').innerHTML = TABS.map((t) => `<button class="tab${t.id === currentCat ? ' active' : ''}" data-cat="${t.id}" role="tab">${esc(t.label)}</button>`).join('');
@@ -186,31 +193,59 @@
     } else if (currentCat === 'charts') {
       CHARTS.forEach((c) => grid.appendChild(sourceCard(c)));
     } else {
-      const names = CATS.find((c) => c.id === currentCat).artists;
+      const names = currentCat === 'all' ? ALL : CATS.find((c) => c.id === currentCat).artists;
       names.forEach((name, i) => {
         const card = sourceCard(api.presetCache[name] || { type: 'artist', name }, { preset: true });
         card.style.animationDelay = `${Math.min(i, 20) * 25}ms`;
         grid.appendChild(card);
       });
-      loadPresetPictures(names);
+      loadPresetPictures();
     }
+    applyFilter();
     renderSelected();
   }
 
+  // filtre la liste affichée en tapant un nom
+  function applyFilter() {
+    const q = BT.norm($('#catFilter').value);
+    $$('#presets .artist').forEach((c) => c.classList.toggle('hidden', !!q && !BT.norm(c.dataset.name).includes(q)));
+  }
+  $('#catFilter').addEventListener('input', applyFilter);
+
   // Charge les photos des suggestions en tâche de fond (4 à la fois, mises en cache)
-  function loadPresetPictures(names) {
+  const picQueue = [];
+  let picRunning = 0;
+  function pumpPictures() {
+    while (picRunning < 4 && picQueue.length) {
+      const { name, seq } = picQueue.shift();
+      if (seq !== loadSeq || api.presetCache[name]) { if (api.presetCache[name]) swapCard(name); continue; }
+      picRunning++;
+      api.resolve(name).then(() => { if (seq === loadSeq) swapCard(name); }).catch(() => {}).finally(() => { picRunning--; pumpPictures(); });
+    }
+  }
+  function swapCard(name) {
+    const old = $(`#presets .artist[data-name="${CSS.escape(name)}"]`);
+    if (!old || old.dataset.key) return;
+    const card = sourceCard(api.presetCache[name], { preset: true });
+    card.style.animation = 'none';
+    if (old.classList.contains('hidden')) card.classList.add('hidden');
+    old.replaceWith(card);
+    renderSelected();
+  }
+  let picObserver = null;
+  function loadPresetPictures() {
     const seq = ++loadSeq;
-    BT.pool(names.filter((n) => !api.presetCache[n]), 4, async (name) => {
-      if (seq !== loadSeq) return;
-      const a = await api.resolve(name);
-      const old = $(`#presets .artist[data-name="${CSS.escape(name)}"]`);
-      if (old && seq === loadSeq) {
-        const card = sourceCard(a, { preset: true });
-        card.style.animation = 'none';
-        old.replaceWith(card);
-        renderSelected();
-      }
-    });
+    picQueue.length = 0;
+    if (picObserver) picObserver.disconnect();
+    picObserver = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        picObserver.unobserve(e.target);
+        if (!e.target.dataset.key) picQueue.push({ name: e.target.dataset.name, seq });
+      });
+      pumpPictures();
+    }, { rootMargin: '200px' });
+    $$('#presets .artist:not([data-key])').forEach((c) => picObserver.observe(c));
   }
 
   $('#tabs').addEventListener('click', (e) => {
@@ -219,12 +254,13 @@
     $$('.tab').forEach((t) => t.classList.toggle('active', t === tab));
     tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     currentCat = tab.dataset.cat;
+    $('#catFilter').value = '';
     renderPresets();
   });
 
   // 🎲 ajoute un artiste au hasard de la catégorie affichée
   $('#randomPick').addEventListener('click', async () => {
-    const cat = CATS.find((c) => c.id === currentCat);
+    const cat = currentCat === 'all' ? { artists: ALL } : CATS.find((c) => c.id === currentCat);
     if (!cat) return;
     const free = cat.artists.filter((n) => !(api.presetCache[n] && selected.has(sourceKey(api.presetCache[n]))));
     if (!free.length) return;
@@ -280,6 +316,8 @@
     survival: "3 vies. Chaque erreur en coûte une : tiens le plus longtemps possible.",
     chrono: '90 secondes pour trouver un maximum de titres. Une erreur coûte 5 s.',
     online: "Tu crées un salon et tu donnes le code à tes potes. Tout le monde entend le même extrait en même temps, et le premier à trouver gagne +50 pts.",
+    battle: "Deux sons s'affrontent : écoute-les et choisis le meilleur. Tu gagnes des points si le public (le son le plus écouté) et l'IA sont d'accord avec toi. En ligne, la majorité du salon décide.",
+    theme: "Un thème est tiré au hasard (« pour la salle de sport », « pour un chagrin d'amour »…). Choisis le son qui colle le mieux au thème. L'IA donne son verdict et l'explique.",
   };
   function renderSettings() {
     $$('.settings .seg').forEach((seg) => {
@@ -287,9 +325,13 @@
       seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.value === settings[key]));
     });
     const online = settings.play === 'online';
-    $$('[data-only="solo"]').forEach((el) => el.classList.toggle('hidden', online));
-    $$('[data-only="rounds"]').forEach((el) => el.classList.toggle('hidden', !online && settings.mode !== 'classic'));
-    $('#settingHelp').textContent = online ? HELP.online : HELP[settings.mode];
+    const quiz = settings.game === 'quiz';
+    $$('[data-only="solo"]').forEach((el) => el.classList.toggle('hidden', online || !quiz));
+    $$('[data-only="quiz"]').forEach((el) => el.classList.toggle('hidden', !quiz));
+    $$('[data-only="battle"]').forEach((el) => el.classList.toggle('hidden', quiz));
+    $$('[data-only="rounds"]').forEach((el) => el.classList.toggle('hidden', quiz && !online && settings.mode !== 'classic'));
+    $('[data-only="rounds"] .label').textContent = quiz ? 'Questions' : 'Duels';
+    $('#settingHelp').textContent = !quiz ? HELP[settings.game] : online ? HELP.online : HELP[settings.mode];
     renderStartBtn();
     renderActionBar();
   }
@@ -313,12 +355,14 @@
     const sources = [...selected.values()];
     if (!sources.length) return;
     if (settings.play === 'online') BT.Online.host(sources, { ...settings, mode: 'online' });
+    else if (settings.game !== 'quiz') BT.Battle.start(sources, { ...settings });
     else BT.Solo.start(sources, { ...settings });
   });
 
   $('#logoBtn').addEventListener('click', () => {
     if (BT.Online.active()) { BT.Online.leave(true); return; }
     if (BT.Solo.isRunning() && document.body.dataset.screen === 'play') { BT.Solo.quit(); return; }
+    if (BT.Battle.isRunning() && document.body.dataset.screen === 'battle') { BT.Battle.quit(); return; }
     show('home');
   });
 
@@ -339,11 +383,20 @@
       if (onPick) onPick();
     };
   }
+  function renderAi() {
+    const on = !!store.get('aiKey', '');
+    $('#aiStatus').textContent = on ? '· Claude activé ✅' : '· IA du jeu (gratuite)';
+    $('#aiClear').classList.toggle('hidden', !on);
+  }
   $('#profileBtn').addEventListener('click', () => {
     $('#nameInput').value = profile.name;
+    $('#aiKey').value = store.get('aiKey', '');
+    renderAi();
     avatarPicker($('#avatars'));
     $('#profileDialog').showModal();
   });
+  $('#aiKey').addEventListener('input', (e) => { store.set('aiKey', e.target.value.trim()); renderAi(); });
+  $('#aiClear').addEventListener('click', () => { store.set('aiKey', ''); $('#aiKey').value = ''; renderAi(); });
   $('#nameInput').addEventListener('input', (e) => { profile.name = e.target.value.trim().slice(0, 16); BT.saveProfile(); renderProfile(); });
 
   // ---------- Rejoindre un salon ----------
@@ -376,7 +429,7 @@
   function renderLeaderboard() {
     const scores = store.get('scores2', []);
     const list = $('#leaderboard');
-    const filtered = scores.filter((s) => lbFilter === 'all' || s.mode === lbFilter).slice(0, 10);
+    const filtered = scores.filter((s) => lbFilter === 'all' || s.mode === lbFilter || (lbFilter === 'battle' && s.mode === 'theme')).slice(0, 10);
     list.innerHTML = filtered.length ? '' : '<p class="muted">Aucune partie pour l\'instant. Lance-toi !</p>';
     filtered.forEach((s) => {
       const li = document.createElement('li');
@@ -446,6 +499,7 @@
     if (['50', '100', 'all'].includes(p.get('p'))) settings.pool = p.get('p');
     if (['title', 'artist'].includes(p.get('g'))) settings.guess = p.get('g');
     settings.play = 'solo';
+    settings.game = 'quiz';
     renderSettings();
     chartIds.forEach((id) => { const c = CHARTS.find((x) => x.id === id); if (c) selected.set(sourceKey(c), c); });
     try {

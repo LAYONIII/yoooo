@@ -93,7 +93,10 @@
         </div>
         <div class="cat-head">
           <p id="catDesc" class="muted"></p>
-          <button class="btn btn-glass btn-sm" id="randomPick" title="Ajoute un artiste au hasard de cette catégorie">🎲 Au hasard</button>
+          <div class="cat-tools">
+            <input id="catFilter" class="filter-input" type="search" placeholder="Filtrer la liste…" aria-label="Filtrer les artistes affichés">
+            <button class="btn btn-glass btn-sm" id="randomPick" title="Ajoute un artiste au hasard de cette catégorie">🎲 Au hasard</button>
+          </div>
         </div>
         <div id="presets" class="artist-grid"></div>
 
@@ -104,6 +107,21 @@
             <div class="seg" data-setting="play">
               <button data-value="solo">🎧 Solo</button>
               <button data-value="online">🌐 En ligne</button>
+            </div>
+          </div>
+          <div class="setting">
+            <span class="label">Jeu</span>
+            <div class="seg" data-setting="game">
+              <button data-value="quiz">🎯 Blind test</button>
+              <button data-value="battle">⚔️ Battle</button>
+              <button data-value="theme">🎲 Battle à thème</button>
+            </div>
+          </div>
+          <div class="setting" data-only="battle">
+            <span class="label">Duels</span>
+            <div class="seg" data-setting="duel">
+              <button data-value="diff">🆚 Artistes différents</button>
+              <button data-value="same">🎤 Même artiste</button>
             </div>
           </div>
           <div class="setting" data-only="solo">
@@ -120,14 +138,14 @@
               <button data-value="5">5</button><button data-value="10">10</button><button data-value="15">15</button><button data-value="20">20</button><button data-value="30">30</button>
             </div>
           </div>
-          <div class="setting">
+          <div class="setting" data-only="quiz">
             <span class="label">À deviner</span>
             <div class="seg" data-setting="guess">
               <button data-value="title">🎵 Le titre</button>
               <button data-value="artist">🎤 Qui chante ?</button>
             </div>
           </div>
-          <div class="setting">
+          <div class="setting" data-only="quiz">
             <span class="label">Difficulté</span>
             <div class="seg" data-setting="difficulty">
               <button data-value="easy">😎 Facile</button>
@@ -252,6 +270,31 @@
       </div>
     </section>
 
+    <!-- ================= BATTLE ================= -->
+    <section id="screen-battle" class="screen">
+      <div class="play-layout">
+        <div class="play-main">
+          <div class="hud" id="bHud"></div>
+          <p class="b-progress" id="bProgress"></p>
+          <div class="theme-card hidden" id="bTheme"></div>
+          <div class="duel">
+            <div class="duel-card" id="duelA" data-side="a"></div>
+            <div class="vs"><span>VS</span></div>
+            <div class="duel-card" id="duelB" data-side="b"></div>
+          </div>
+          <div class="duel-status" id="duelStatus" aria-live="polite"></div>
+          <div class="verdicts" id="verdicts"></div>
+          <div class="game-actions"><button class="btn hidden" id="bNext">Duel suivant ➜</button></div>
+          <div class="emoji-bar hidden" id="bEmojiBar" data-emoji-bar></div>
+          <button class="link-btn" id="bQuit">Quitter la battle</button>
+        </div>
+        <aside class="scoreboard hidden" id="bScoreboardWrap">
+          <h3>Classement en direct</h3>
+          <ol class="live-board"></ol>
+        </aside>
+      </div>
+    </section>
+
     <!-- ================= RÉSULTATS SOLO ================= -->
     <section id="screen-results" class="screen">
       <div class="panel results">
@@ -319,6 +362,7 @@
       <button data-value="survival">Survie</button>
       <button data-value="chrono">Chrono</button>
       <button data-value="online">En ligne</button>
+      <button data-value="battle">Battle</button>
     </div>
     <ol id="leaderboard" class="leaderboard"></ol>
     <h2>📊 Tes stats</h2>
@@ -338,6 +382,12 @@
     <label class="field">Pseudo<input id="nameInput" class="text-input" maxlength="16" placeholder="Ton pseudo"></label>
     <p class="label">Avatar</p>
     <div class="avatars" id="avatars"></div>
+    <details class="ai-box" id="aiBox">
+      <summary>🤖 IA des battles <span id="aiStatus" class="ai-status"></span></summary>
+      <p class="muted small">Par défaut, l'<b>IA du jeu</b> (gratuite) juge les battles en analysant le tempo, la popularité, l'année et les paroles des sons. Pour un vrai juge qui connaît les morceaux, colle ta <b>clé d'API Claude</b> (console.anthropic.com). Elle reste uniquement dans ton navigateur et n'est envoyée qu'à l'API d'Anthropic. Chaque verdict est facturé sur ton compte Anthropic.</p>
+      <input id="aiKey" class="text-input" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+      <button class="link-btn" id="aiClear" type="button">Retirer la clé</button>
+    </details>
     <form method="dialog"><button class="btn btn-xl">Valider</button></form>
   </dialog>
 
@@ -362,6 +412,8 @@
       <li><b>Modes solo</b> : 🎯 Classique (5 à 30 questions) · ❤️ Survie (3 vies) · ⏱️ Chrono (90 s, une erreur coûte 5 s).</li>
       <li><b>En ligne</b> : crée un salon et donne le code à tes potes. Tout le monde entend le même extrait en même temps. Le <b>premier</b> à trouver la bonne réponse gagne <b>+50 pts</b>.</li>
       <li><b>Difficulté</b> : Facile = 20 s, Normal = 12 s, Difficile = 6 s avec un passage pris au hasard dans le morceau.</li>
+      <li><b>⚔️ Battle</b> : deux sons s'affrontent (deux artistes différents, ou deux sons du même artiste). Écoute les deux et choisis le meilleur. En solo, tu gagnes des points si le public (le son le plus écouté sur Deezer) et l'IA sont d'accord avec toi. En ligne, la majorité du salon désigne le gagnant.</li>
+      <li><b>🎲 Battle à thème</b> : un thème est tiré au hasard (« pour la salle de sport », « pour un chagrin d'amour »…). Choisis le son qui colle le mieux au thème. L'<b>IA</b> donne son verdict et l'explique. Dans ton profil, tu peux brancher l'IA Claude avec ta propre clé.</li>
     </ul>
     <p class="muted small">Extraits de 30 s fournis par l'API publique de Deezer. Le mode en ligne connecte les joueurs directement entre eux (WebRTC), sans compte à créer.</p>
   </dialog>
@@ -374,6 +426,7 @@
   <script src="js/artists.js"></script>
   <script src="js/quiz.js"></script>
   <script src="js/solo.js"></script>
+  <script src="js/battle.js"></script>
   <script src="js/online.js"></script>
   <script src="js/app.js"></script>
   <script src="js/fx3d.js"></script>

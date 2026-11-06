@@ -21,11 +21,13 @@ Dans le dépôt GitHub : **Settings → Pages → Build and deployment → Branc
 
 ### 🎵 Musique
 - **Plus de 300 artistes suggérés** dans 11 catégories : Rap FR, Rap FR old school, Rap US, Légendes du rap US, Pop & R&B FR, Pop monde, Variété française, Légendes, Rock, Électro & Dance, Afro & Latino. La liste est dans `js/artists.js` : pour ajouter un artiste, il suffit d'écrire son nom.
-- **N'importe quel autre artiste** grâce à la recherche Deezer, et un bouton 🎲 qui ajoute un artiste au hasard.
+- Un onglet **⭐ Tous** qui liste tous les artistes de A à Z, avec un **filtre** pour retrouver un nom tout de suite.
+- **N'importe quel autre artiste** grâce à la recherche Deezer, et un bouton 🎲 qui ajoute un artiste au hasard. La recherche choisit le vrai artiste (nom exact, le plus de fans) plutôt qu'un homonyme.
 - **Playlists** : Top du moment, Top Rap, Pop, R&B, Dance et Rock (les classements Deezer de ton pays).
 - **Mix** : jusqu'à 8 artistes ou playlists en même temps.
 - **À deviner** : 🎵 le titre, ou 🎤 « Qui chante ? » (on devine l'artiste).
-- **Morceaux** : ⭐ les hits (top 50), 📀 le top 100, ou 💿 **toute la disco** (tous les albums, EP et singles de l'artiste, souvent plusieurs centaines de titres).
+- **Morceaux** : ⭐ les hits (top 50), 📀 le top 100, ou 💿 **toute la disco**, le réglage par défaut : tous les albums, EP et singles de l'artiste, plus ses featurings.
+- **Moins de répétitions** : le jeu retient les morceaux déjà entendus et fait passer les nouveaux en premier.
 
 ### 🎧 Solo
 - **3 modes** : 🎯 Classique (5 à 30 questions), ❤️ Survie (3 vies), ⏱️ Chrono (90 s, une erreur coûte 5 s).
@@ -35,6 +37,15 @@ Dans le dépôt GitHub : **Settings → Pages → Build and deployment → Branc
 - **Pause** avec le bouton ⏸️ ou la touche `Échap`, et un **compte à rebours 3D** avant chaque partie.
 - **⚡ Partie rapide** : un artiste connu au hasard, et la partie se lance tout de suite.
 - **Défis** : le bouton « Défier un pote » crée un lien avec les mêmes réglages et ton score à battre.
+
+### ⚔️ Battles
+- **⚔️ Battle** : deux hits s'affrontent, soit de **deux artistes différents**, soit du **même artiste**. On écoute les deux extraits et on choisit le meilleur.
+- **🎲 Battle à thème** : un thème est tiré au hasard parmi 22 (« pour se motiver à la salle », « pour un chagrin d'amour », « le plus nostalgique », « pour rouler de nuit »…). Il faut choisir le son qui colle le mieux au thème.
+- **L'IA juge chaque duel et explique son choix** :
+  - par défaut, l'**IA du jeu** (gratuite, sans compte) analyse le tempo (BPM), la popularité, l'année et les paroles des deux sons ;
+  - si tu colles ta **clé d'API Claude** dans ton profil (🤖 IA des battles), c'est Claude qui juge. La clé reste dans ton navigateur, et chaque verdict est facturé sur ton compte Anthropic.
+- **En solo**, tu gagnes des points quand le public (le son le plus écouté sur Deezer) et l'IA sont d'accord avec toi.
+- **En ligne**, la majorité du salon désigne le gagnant, et l'IA départage les égalités. On gagne des points en votant avec la majorité et en étant d'accord avec l'IA.
 
 ### 🌐 En ligne (multijoueur)
 - Un joueur **crée un salon** et reçoit un **code à 6 caractères**. Les autres le rejoignent avec ce code ou avec le lien d'invitation (jusqu'à 12 joueurs).
@@ -70,6 +81,7 @@ HTML, CSS et JavaScript, sans framework ni étape de build.
 | `css/style.css` | Design (thème sombre néon, animations, responsive) |
 | `js/artists.js` | Les suggestions d'artistes par catégorie |
 | `js/fx3d.js` | Effets 3D (Three.js) et cartes qui pivotent |
+| `js/battle.js` | Modes Battle et Battle à thème, thèmes, IA juge (intégrée ou Claude) |
 | `js/core.js` | Outils, API Deezer (JSONP), création des questions, sons, confettis, profil, succès |
 | `js/quiz.js` | Écran de question partagé : audio, chrono, réponses, jokers, clavier |
 | `js/solo.js` | Parties solo, résultats, récap, liens de défi |
@@ -82,3 +94,11 @@ HTML, CSS et JavaScript, sans framework ni étape de build.
 - Pour tester en local avec ton propre serveur PeerJS, lance `npx peer --port 9000`, puis ajoute `?peer=127.0.0.1:9000` à l'adresse du site.
 
 > ℹ️ Sur certains réseaux très restrictifs (wifi d'entreprise ou d'école, certains forfaits mobiles), la connexion directe entre joueurs peut échouer. Dans ce cas, essaie un autre réseau.
+
+## Pourquoi Deezer (et pas Spotify ou YouTube) ?
+
+- **Deezer** donne gratuitement un extrait de 30 s pour presque tous les titres, sans compte ni clé. C'est parfait pour un blind test.
+- **Spotify** ne fournit plus d'extraits aux nouvelles applications depuis fin 2024. Pour lire la musique, chaque joueur devrait se connecter avec un compte Premium.
+- **YouTube** demande une clé d'API et limite le nombre de recherches par jour (environ 100). Un site public serait vite bloqué.
+
+Pour avoir plus de sons d'un artiste, choisis **💿 Toute la disco** : tous ses albums, EP, singles et featurings sont chargés.
