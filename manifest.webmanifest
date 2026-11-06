@@ -1,0 +1,14 @@
+{
+  "name": "BlindTest — Trouve le bon titre",
+  "short_name": "BlindTest",
+  "description": "Blind test musical en solo ou en ligne avec tes potes.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#07070d",
+  "theme_color": "#07070d",
+  "lang": "fr",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

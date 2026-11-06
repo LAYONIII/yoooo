@@ -1,0 +1,323 @@
+/* =========================================================
+   core.js : briques partagées (utilitaires, stockage, API Deezer,
+   effets sonores, confettis, profil, succès, création des questions).
+   Tout est exposé dans l'objet global BT.
+   ========================================================= */
+window.BT = window.BT || {};
+(() => {
+  'use strict';
+
+  // ---------- Utilitaires ----------
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+  const rand = (n) => Math.floor(Math.random() * n);
+  const shuffle = (arr) => {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) { const j = rand(i + 1); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  };
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const initials = (name) => String(name).split(/\s+/).map((w) => w[0] || '').join('').slice(0, 2).toUpperCase();
+  const fmtFans = (n) => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.0', '').replace('.', ',') + ' M fans' : n >= 1e3 ? Math.round(n / 1e3) + ' k fans' : (n || 0) + ' fans';
+  const fmtSec = (s) => `${s.toFixed(1).replace('.', ',')} s`;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Normalise un titre pour repérer les doublons : "Jefe (Remix) [feat. X]" -> "jefe"
+  const norm = (t) => String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\(.*?\)|\[.*?\]/g, '').replace(/\s-\s.*$/, '').replace(/\b(feat|ft)\..*$/, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const store = {
+    get(key, fallback) { try { const v = localStorage.getItem('bt_' + key); return v == null ? fallback : JSON.parse(v); } catch { return fallback; } },
+    set(key, value) { try { localStorage.setItem('bt_' + key, JSON.stringify(value)); } catch { /* stockage indisponible */ } },
+  };
+
+  function toast(msg, { type = '', ms = 2800, icon = '' } = {}) {
+    const box = $('#toasts');
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.innerHTML = `${icon ? `<span class="toast-ico">${icon}</span>` : ''}<span>${esc(msg)}</span>`;
+    box.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 400); }, ms);
+  }
+
+  function show(name) {
+    $$('.screen').forEach((s) => s.classList.toggle('active', s.id === `screen-${name}`));
+    document.body.dataset.screen = name;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ---------- API Deezer (JSONP : marche sans serveur, même en file://) ----------
+  const API = 'https://api.deezer.com';
+  let jsonpId = 0;
+  function jsonp(path, timeout = 12000) {
+    return new Promise((resolve, reject) => {
+      const cb = `__dz${Date.now()}_${jsonpId++}`;
+      const script = document.createElement('script');
+      const done = () => { clearTimeout(timer); script.remove(); window[cb] = () => {}; };
+      const timer = setTimeout(() => { done(); reject(new Error('Deezer ne répond pas, réessaie dans un instant.')); }, timeout);
+      window[cb] = (data) => {
+        done();
+        if (data && data.error) reject(new Error(data.error.message || 'Erreur Deezer'));
+        else resolve(data);
+      };
+      script.onerror = () => { done(); reject(new Error('Impossible de contacter Deezer. Vérifie ta connexion.')); };
+      script.src = `${API}${path}${path.includes('?') ? '&' : '?'}output=jsonp&callback=${cb}`;
+      document.head.appendChild(script);
+    });
+  }
+
+  const toArtist = (a) => ({ type: 'artist', id: a.id, name: a.name, picture: a.picture_medium || a.picture || '', fans: a.nb_fan || 0 });
+
+  const api = {
+    async search(q, limit = 12) {
+      const res = await jsonp(`/search/artist?q=${encodeURIComponent(q)}&limit=${limit}`);
+      return (res.data || []).map(toArtist);
+    },
+    async artist(id) { return toArtist(await jsonp(`/artist/${id}`)); },
+    async related(id) {
+      try { const res = await jsonp(`/artist/${id}/related?limit=20`); return (res.data || []).map((a) => a.name); } catch { return []; }
+    },
+    presetCache: store.get('presetCache', {}),
+    async resolve(name) {
+      if (this.presetCache[name]) return this.presetCache[name];
+      const [first] = await this.search(name, 1);
+      if (!first) throw new Error(`Artiste introuvable : ${name}`);
+      this.presetCache[name] = first;
+      store.set('presetCache', this.presetCache);
+      return first;
+    },
+  };
+
+  // Playlists « charts » de Deezer (le classement dépend du pays du joueur)
+  const CHARTS = [
+    { type: 'chart', id: 0, name: 'Top du moment', emoji: '🔥', desc: 'Les titres les plus écoutés' },
+    { type: 'chart', id: 116, name: 'Top Rap', emoji: '🎤', desc: 'Rap & Hip-Hop' },
+    { type: 'chart', id: 132, name: 'Top Pop', emoji: '💃', desc: 'Les hits pop' },
+    { type: 'chart', id: 165, name: 'Top R&B', emoji: '💜', desc: 'R&B, soul' },
+    { type: 'chart', id: 113, name: 'Top Dance', emoji: '🪩', desc: 'Dance & électro' },
+    { type: 'chart', id: 152, name: 'Top Rock', emoji: '🎸', desc: 'Rock' },
+  ];
+  const sourceKey = (s) => `${s.type === 'chart' ? 'c' : 'a'}${s.id}`;
+
+  const CACHE_TTL = 10 * 60 * 1000; // les liens d'extraits Deezer expirent : on recharge après 10 min
+  const trackCache = new Map();
+  async function fetchTracks(source, limit) {
+    const key = `${sourceKey(source)}:${limit}`;
+    const hit = trackCache.get(key);
+    if (hit && Date.now() - hit.at < CACHE_TTL) return hit.tracks;
+    const path = source.type === 'chart' ? `/chart/${source.id}/tracks?limit=${Math.max(limit, 50)}` : `/artist/${source.id}/top?limit=${limit}`;
+    const res = await jsonp(path);
+    const seen = new Set();
+    const tracks = [];
+    for (const t of res.data || []) {
+      if (!t.preview || t.readable === false) continue;
+      const title = t.title_short || t.title;
+      const n = norm(title);
+      const artistName = (t.artist && t.artist.name) || source.name;
+      const dedupe = `${n}|${source.type === 'chart' ? artistName : ''}`;
+      if (!n || seen.has(dedupe)) continue; // on retire les doublons (remix, live…)
+      seen.add(dedupe);
+      tracks.push({
+        id: t.id, title, norm: n, preview: t.preview, link: t.link,
+        album: t.album ? t.album.title : '',
+        cover: t.album ? (t.album.cover_big || t.album.cover_medium || '') : '',
+        coverSmall: t.album ? (t.album.cover_small || t.album.cover_medium || '') : '',
+        artistName,
+        group: sourceKey(source),
+      });
+    }
+    trackCache.set(key, { at: Date.now(), tracks });
+    return tracks;
+  }
+
+  // ---------- Création des questions ----------
+  const DIFFICULTY = {
+    easy: { time: 20, randomStart: false, label: 'Facile' },
+    normal: { time: 12, randomStart: false, label: 'Normal' },
+    hard: { time: 6, randomStart: true, label: 'Difficile' },
+  };
+  const MODES = { classic: 'Classique', survival: 'Survie', chrono: 'Chrono', online: 'En ligne' };
+
+  /** Charge tous les morceaux des sources choisies et prépare le « pool » de questions. */
+  async function loadPool(sources, { pool, guess }) {
+    const lists = await Promise.all(sources.map((s) => fetchTracks(s, +pool)));
+    const tracks = lists.flat();
+    const groups = new Map();
+    tracks.forEach((t) => { if (!groups.has(t.group)) groups.set(t.group, []); groups.get(t.group).push(t); });
+    const artistNames = new Map(); // nom normalisé -> nom affiché
+    tracks.forEach((t) => artistNames.set(norm(t.artistName), t.artistName));
+    if (guess === 'artist') {
+      // pour « Qui chante ? », on ajoute des artistes proches comme mauvaises réponses
+      const rel = await Promise.all(sources.filter((s) => s.type === 'artist').map((s) => api.related(s.id)));
+      rel.flat().forEach((n) => { if (!artistNames.has(norm(n))) artistNames.set(norm(n), n); });
+    }
+    const multiArtist = new Set(tracks.map((t) => norm(t.artistName))).size > 1;
+    const poolObj = { sources, tracks, groups, artistNames: [...artistNames.values()], multiArtist, guess };
+    if (guess === 'artist' && poolObj.artistNames.length < 4) throw new Error("Pas assez d'artistes différents pour « Qui chante ? ». Ajoute d'autres artistes ou choisis une playlist.");
+    if (tracks.length < 4) throw new Error('Pas assez de morceaux avec un extrait. Essaie « Toute la disco » ou ajoute un autre artiste.');
+    return poolObj;
+  }
+
+  /** Construit une question à 4 choix pour un morceau donné. */
+  function makeQuestion(pool, track) {
+    if (pool.guess === 'artist') {
+      const correct = track.artistName;
+      const others = shuffle(pool.artistNames.filter((n) => norm(n) !== norm(correct))).slice(0, 3);
+      const labels = shuffle([correct, ...others]);
+      return {
+        choices: labels.map((l) => ({ label: l })),
+        correctIndex: labels.indexOf(correct),
+        hint: `Le titre : « ${track.title} »`,
+        prompt: 'Qui chante ce morceau ?',
+      };
+    }
+    const same = pool.groups.get(track.group) || [];
+    // mauvaises réponses chez le même artiste si possible (plus dur !)
+    const source = new Set(same.map((t) => t.norm)).size >= 4 ? same : pool.tracks;
+    const wrong = [];
+    const used = new Set([track.norm]);
+    for (const t of shuffle(source)) {
+      if (used.has(t.norm)) continue;
+      used.add(t.norm);
+      wrong.push(t);
+      if (wrong.length === 3) break;
+    }
+    const opts = shuffle([track, ...wrong]);
+    const words = track.title.trim().split(/\s+/).length;
+    return {
+      choices: opts.map((t) => ({ label: t.title, sub: pool.multiArtist ? t.artistName : '' })),
+      correctIndex: opts.indexOf(track),
+      hint: `Commence par « ${track.title.trim()[0].toUpperCase()} » · ${words} mot${words > 1 ? 's' : ''}`,
+      prompt: 'Quel est ce titre ?',
+    };
+  }
+
+  const pointsFor = ({ elapsed, time, streak, hinted }) => {
+    const speed = Math.round(100 * Math.max(0, 1 - elapsed / time));
+    const mult = streak >= 5 ? 2 : streak >= 3 ? 1.5 : 1;
+    return Math.round((100 + speed) * mult * (hinted ? 0.5 : 1));
+  };
+  const multiplierFor = (streak) => (streak >= 5 ? 2 : streak >= 3 ? 1.5 : 1);
+
+  // ---------- Volume & effets sonores (Web Audio, aucun fichier) ----------
+  const sound = {
+    volume: store.get('volume', 0.8),
+    muted: store.get('muted', false),
+  };
+  let audioCtx;
+  function sfx(type) {
+    if (sound.muted || sound.volume === 0) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const now = audioCtx.currentTime;
+      const notes = {
+        good: [[660, 0], [880, 0.08], [1320, 0.16]],
+        bad: [[220, 0], [150, 0.13]],
+        tick: [[1100, 0]],
+        end: [[523, 0], [659, 0.12], [784, 0.24], [1046, 0.36]],
+        join: [[880, 0], [1320, 0.08]],
+        pop: [[1500, 0]],
+        badge: [[784, 0], [988, 0.1], [1175, 0.2], [1568, 0.3]],
+      }[type] || [];
+      for (const [freq, at] of notes) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type === 'bad' ? 'sawtooth' : 'triangle';
+        osc.frequency.value = freq;
+        const len = type === 'tick' || type === 'pop' ? 0.05 : 0.16;
+        const peak = (type === 'tick' || type === 'pop' ? 0.07 : 0.16) * sound.volume;
+        gain.gain.setValueAtTime(0.0001, now + at);
+        gain.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), now + at + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + at + len);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(now + at);
+        osc.stop(now + at + len + 0.02);
+      }
+    } catch { /* Web Audio indisponible */ }
+  }
+
+  // ---------- Confettis ----------
+  let confettiParts = [];
+  let confettiRaf = 0;
+  function confetti(count = 140) {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const cv = $('#confetti');
+    const ctx = cv.getContext('2d');
+    const resize = () => { cv.width = innerWidth * devicePixelRatio; cv.height = innerHeight * devicePixelRatio; };
+    resize();
+    const colors = ['#ff2e93', '#8b5cf6', '#22d3ee', '#facc15', '#34d399', '#fb7185'];
+    for (let i = 0; i < count; i++) {
+      confettiParts.push({
+        x: innerWidth * (0.2 + Math.random() * 0.6), y: innerHeight * 0.35,
+        vx: (Math.random() - 0.5) * 14, vy: -Math.random() * 14 - 4,
+        r: 4 + Math.random() * 5, a: Math.random() * Math.PI, va: (Math.random() - 0.5) * 0.3,
+        c: colors[rand(colors.length)], life: 0,
+      });
+    }
+    cancelAnimationFrame(confettiRaf);
+    const step = () => {
+      ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      confettiParts = confettiParts.filter((p) => p.y < innerHeight + 20 && p.life < 300);
+      for (const p of confettiParts) {
+        p.vy += 0.35; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.a += p.va; p.life++;
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a);
+        ctx.fillStyle = p.c; ctx.fillRect(-p.r / 2, -p.r / 4, p.r, p.r / 2);
+        ctx.restore();
+      }
+      if (confettiParts.length) confettiRaf = requestAnimationFrame(step);
+      else ctx.clearRect(0, 0, innerWidth, innerHeight);
+    };
+    step();
+  }
+
+  // ---------- Profil ----------
+  const AVATARS = ['🎧', '🎤', '🦁', '🐺', '🐯', '🦊', '🐼', '🐸', '👽', '🤖', '👑', '🔥', '💎', '🎸', '🥷', '😈', '🐙', '🦄', '🍕', '⚡'];
+  const profile = Object.assign({ name: '', avatar: AVATARS[rand(AVATARS.length)] }, store.get('profile', {}));
+  const saveProfile = () => store.set('profile', profile);
+  const displayName = () => profile.name.trim() || 'Joueur';
+
+  // ---------- Succès ----------
+  const BADGES = [
+    { id: 'first', icon: '🎧', name: 'Première écoute', desc: 'Termine ta première partie.' },
+    { id: 'perfect', icon: '💯', name: 'Sans faute', desc: '100 % de bonnes réponses sur au moins 10 questions.' },
+    { id: 'streak10', icon: '🔥', name: 'En feu', desc: '10 bonnes réponses d\'affilée.' },
+    { id: 'speed', icon: '⚡', name: 'Shazam humain', desc: 'Trouve un titre en moins de 1,5 seconde.' },
+    { id: 'survivor', icon: '❤️', name: 'Survivant', desc: '20 bonnes réponses en mode Survie.' },
+    { id: 'flash', icon: '⏱️', name: 'Flash', desc: '20 titres trouvés en mode Chrono.' },
+    { id: 'hardcore', icon: '💀', name: 'Hardcore', desc: 'Au moins 80 % en Difficile sur 10 questions ou plus.' },
+    { id: 'nojoker', icon: '🧠', name: 'Sans filet', desc: 'Termine une partie de 10 questions ou plus à au moins 80 % sans joker.' },
+    { id: 'whois', icon: '🎤', name: 'Oreille absolue', desc: 'Au moins 80 % en « Qui chante ? » sur 10 questions ou plus.' },
+    { id: 'online', icon: '🌐', name: 'En réseau', desc: 'Joue une partie en ligne.' },
+    { id: 'champion', icon: '👑', name: 'Champion', desc: 'Gagne une partie en ligne contre au moins 1 joueur.' },
+    { id: 'explorer', icon: '🧭', name: 'Explorateur', desc: 'Joue avec 10 artistes ou playlists différents.' },
+  ];
+  const unlocked = store.get('badges', {});
+  function unlock(id) {
+    if (unlocked[id]) return;
+    const b = BADGES.find((x) => x.id === id);
+    if (!b) return;
+    unlocked[id] = Date.now();
+    store.set('badges', unlocked);
+    setTimeout(() => { sfx('badge'); toast(`Succès débloqué : ${b.name}`, { icon: b.icon, type: 'gold', ms: 4000 }); }, 600);
+  }
+
+  function trackPlayed(sources) {
+    const seen = new Set(store.get('playedSources', []));
+    sources.forEach((s) => seen.add(sourceKey(s)));
+    store.set('playedSources', [...seen]);
+    if (seen.size >= 10) unlock('explorer');
+  }
+
+  // ---------- Paramètres d'URL (lus une seule fois au démarrage) ----------
+  const urlParams = new URLSearchParams(location.search);
+
+  Object.assign(BT, {
+    $, $$, rand, shuffle, esc, initials, fmtFans, fmtSec, sleep, norm, store, toast, show,
+    jsonp, api, CHARTS, sourceKey, fetchTracks, loadPool, makeQuestion, pointsFor, multiplierFor,
+    DIFFICULTY, MODES, sound, sfx, confetti, AVATARS, profile, saveProfile, displayName,
+    BADGES, unlocked, unlock, trackPlayed, urlParams,
+  });
+})();
