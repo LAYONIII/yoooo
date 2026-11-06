@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Blind Test Rap</title>
+  <meta name="description" content="Blind test musical : choisis un artiste, écoute l'extrait et trouve le bon titre parmi 4 propositions.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎧</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="logo" id="logoBtn" title="Accueil">🎧 <span>Blind<b>Test</b></span></button>
+    <div class="topbar-right">
+      <label class="volume" title="Volume">
+        <button id="muteBtn" class="icon-btn" aria-label="Couper le son">🔊</button>
+        <input id="volume" type="range" min="0" max="1" step="0.05" value="0.8" aria-label="Volume">
+      </label>
+      <button id="statsBtn" class="icon-btn" title="Classement et stats">🏆</button>
+      <button id="helpBtn" class="icon-btn" title="Règles">❔</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ ACCUEIL ============ -->
+    <section id="screen-home" class="screen active">
+      <div class="hero">
+        <h1>Trouve le bon <span class="grad">titre</span></h1>
+        <p>Choisis un ou plusieurs artistes, écoute l'extrait et trouve le bon morceau parmi 4 propositions.</p>
+      </div>
+
+      <div class="card">
+        <h2>1. Choisis tes artistes</h2>
+        <form id="searchForm" class="search" autocomplete="off">
+          <input id="searchInput" type="search" placeholder="Rechercher un artiste (ex : Ninho, Drake, Aya Nakamura…)" aria-label="Rechercher un artiste">
+          <button type="submit" class="btn">Rechercher</button>
+        </form>
+        <div id="searchResults" class="artist-grid small"></div>
+
+        <div id="selectedWrap" class="selected-wrap hidden">
+          <h3>Sélection <span id="selectedCount"></span></h3>
+          <div id="selected" class="chips"></div>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-cat="fr">Rap FR</button>
+          <button class="tab" data-cat="us">Rap US</button>
+          <button class="tab" data-cat="pop">Pop / R&amp;B</button>
+          <button class="tab" data-cat="recent">Récents</button>
+        </div>
+        <div id="presets" class="artist-grid"></div>
+      </div>
+
+      <div class="card">
+        <h2>2. Règle ta partie</h2>
+        <div class="settings">
+          <div class="setting">
+            <span class="label">Mode</span>
+            <div class="seg" data-setting="mode">
+              <button data-value="classic" class="active" title="Un nombre de questions fixe">🎯 Classique</button>
+              <button data-value="survival" title="3 vies, jusqu'au bout">❤️ Survie</button>
+              <button data-value="chrono" title="Un maximum de bonnes réponses en 90 s">⏱️ Chrono</button>
+            </div>
+          </div>
+          <div class="setting" id="roundsSetting">
+            <span class="label">Questions</span>
+            <div class="seg" data-setting="rounds">
+              <button data-value="5">5</button>
+              <button data-value="10" class="active">10</button>
+              <button data-value="15">15</button>
+              <button data-value="20">20</button>
+            </div>
+          </div>
+          <div class="setting">
+            <span class="label">Difficulté</span>
+            <div class="seg" data-setting="difficulty">
+              <button data-value="easy" title="20 s pour répondre, extrait depuis le début">😎 Facile</button>
+              <button data-value="normal" class="active" title="12 s pour répondre">🔥 Normal</button>
+              <button data-value="hard" title="6 s, extrait pris au hasard dans le morceau">💀 Difficile</button>
+            </div>
+          </div>
+          <div class="setting">
+            <span class="label">Morceaux</span>
+            <div class="seg" data-setting="pool">
+              <button data-value="25" class="active" title="Les 25 titres les plus écoutés">⭐ Les hits</button>
+              <button data-value="100" title="Jusqu'à 100 titres : pour les vrais fans">📀 Toute la disco</button>
+            </div>
+          </div>
+          <div class="setting">
+            <span class="label">Pseudo</span>
+            <input id="playerName" class="text-input" maxlength="16" placeholder="Ton pseudo">
+          </div>
+        </div>
+        <button id="startBtn" class="btn btn-big" disabled>Choisis au moins un artiste</button>
+        <p id="homeError" class="error hidden"></p>
+      </div>
+    </section>
+
+    <!-- ============ CHARGEMENT ============ -->
+    <section id="screen-loading" class="screen">
+      <div class="loader">
+        <div class="vinyl spinning"><div class="vinyl-label">🎧</div></div>
+        <p id="loadingText">Chargement des morceaux…</p>
+      </div>
+    </section>
+
+    <!-- ============ JEU ============ -->
+    <section id="screen-game" class="screen">
+      <div class="hud">
+        <div class="hud-item"><span class="hud-label" id="progressLabel">Question</span><b id="progress">1/10</b></div>
+        <div class="hud-item"><span class="hud-label">Score</span><b id="score">0</b></div>
+        <div class="hud-item"><span class="hud-label">Série</span><b id="streak">0</b></div>
+        <div class="hud-item" id="livesWrap"><span class="hud-label">Vies</span><b id="lives">❤️❤️❤️</b></div>
+        <div class="hud-item" id="chronoWrap"><span class="hud-label">Temps</span><b id="chrono">90</b></div>
+      </div>
+
+      <div class="stage">
+        <div class="player">
+          <div class="vinyl" id="vinyl">
+            <img id="cover" alt="" class="hidden">
+            <div class="vinyl-label" id="vinylLabel">?</div>
+          </div>
+          <div class="eq" id="eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="timer"><div id="timerBar"></div></div>
+          <div class="reveal" id="reveal"></div>
+          <div class="multiplier hidden" id="multiplier"></div>
+        </div>
+
+        <div class="answers" id="answers"></div>
+
+        <div class="game-actions">
+          <button class="btn btn-ghost" id="jokerFifty" title="Retire 2 mauvaises réponses (1 par partie)">✂️ 50/50</button>
+          <button class="btn btn-ghost" id="jokerSkip" title="Passer sans pénalité (1 par partie)">⏭️ Passer</button>
+          <button class="btn btn-ghost" id="replayBtn" title="Réécouter l'extrait (Espace)">🔁 Réécouter</button>
+          <button class="btn hidden" id="nextBtn">Suivant ➜</button>
+        </div>
+        <p class="hint">Raccourcis : touches <kbd>1</kbd>–<kbd>4</kbd> pour répondre, <kbd>Espace</kbd> pour réécouter, <kbd>Entrée</kbd> pour passer à la suite.</p>
+        <button class="link-btn" id="quitBtn">Quitter la partie</button>
+      </div>
+    </section>
+
+    <!-- ============ RÉSULTATS ============ -->
+    <section id="screen-results" class="screen">
+      <div class="card results">
+        <div class="rank" id="rankEmoji">🏆</div>
+        <h1 id="rankTitle">Bien joué !</h1>
+        <p id="rankSub" class="muted"></p>
+        <div class="big-score"><span id="finalScore">0</span> pts</div>
+        <p id="newRecord" class="new-record hidden">🎉 Nouveau record !</p>
+        <div class="stats-row">
+          <div><b id="statCorrect">0/0</b><span>Bonnes réponses</span></div>
+          <div><b id="statAccuracy">0%</b><span>Précision</span></div>
+          <div><b id="statBestStreak">0</b><span>Meilleure série</span></div>
+          <div><b id="statAvgTime">0 s</b><span>Temps moyen</span></div>
+        </div>
+        <div class="result-actions">
+          <button class="btn btn-big" id="replaySameBtn">🔁 Rejouer</button>
+          <button class="btn btn-ghost" id="shareBtn">📤 Partager</button>
+          <button class="btn btn-ghost" id="homeBtn">🏠 Changer d'artiste</button>
+        </div>
+        <p id="shareMsg" class="muted hidden"></p>
+      </div>
+
+      <div class="card">
+        <h2>Récap des morceaux</h2>
+        <p class="muted">Clique sur ▶ pour réécouter un extrait, ou ouvre le morceau sur Deezer.</p>
+        <ol id="recap" class="recap"></ol>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ MODALES ============ -->
+  <dialog id="statsDialog" class="dialog">
+    <form method="dialog"><button class="close" aria-label="Fermer">✕</button></form>
+    <h2>🏆 Classement</h2>
+    <div class="seg small" id="lbFilter">
+      <button data-value="all" class="active">Tout</button>
+      <button data-value="classic">Classique</button>
+      <button data-value="survival">Survie</button>
+      <button data-value="chrono">Chrono</button>
+    </div>
+    <ol id="leaderboard" class="leaderboard"></ol>
+    <h2>📊 Tes stats</h2>
+    <div class="stats-row" id="globalStats"></div>
+    <button class="link-btn danger" id="resetStats">Effacer mes scores</button>
+  </dialog>
+
+  <dialog id="helpDialog" class="dialog">
+    <form method="dialog"><button class="close" aria-label="Fermer">✕</button></form>
+    <h2>❔ Comment jouer</h2>
+    <ul class="rules">
+      <li>Choisis <b>un ou plusieurs artistes</b> (recherche ou suggestions). Avec plusieurs artistes, les morceaux sont mélangés.</li>
+      <li>Un <b>extrait</b> se lance : trouve le bon titre parmi <b>4 propositions</b>.</li>
+      <li>Bonne réponse : <b>100 pts</b> + un <b>bonus de vitesse</b> qui peut aller jusqu'à 100 pts.</li>
+      <li>Série : à partir de 3 bonnes réponses d'affilée, les points sont multipliés par <b>×1,5</b>, puis par <b>×2</b> à partir de 5.</li>
+      <li><b>Jokers</b> (1 de chaque par partie) : ✂️ 50/50 retire deux mauvaises réponses, ⏭️ Passer saute la question sans pénalité.</li>
+      <li><b>Modes</b> :
+        <ul>
+          <li>🎯 Classique : 5 à 20 questions.</li>
+          <li>❤️ Survie : 3 vies, tu continues tant que tu en as.</li>
+          <li>⏱️ Chrono : 90 s pour trouver le plus de titres possible. Une erreur coûte 5 s.</li>
+        </ul>
+      </li>
+      <li><b>Difficulté</b> : Facile = 20 s, Normal = 12 s, Difficile = 6 s avec un passage pris au hasard dans le morceau.</li>
+    </ul>
+    <p class="muted">Extraits fournis par l'API publique de Deezer.</p>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+  <audio id="audio" preload="auto"></audio>
+  <audio id="recapAudio" preload="none"></audio>
+
+  <script src="app.js"></script>
+</body>
+</html>
