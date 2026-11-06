@@ -21,7 +21,7 @@ Dans le dépôt GitHub : **Settings → Pages → Build and deployment → Branc
 
 ### 🎵 Musique
 - **Plus de 300 artistes suggérés** dans 11 catégories : Rap FR, Rap FR old school, Rap US, Légendes du rap US, Pop & R&B FR, Pop monde, Variété française, Légendes, Rock, Électro & Dance, Afro & Latino. La liste est dans `js/artists.js` : pour ajouter un artiste, il suffit d'écrire son nom.
-- Un onglet **⭐ Tous** qui liste tous les artistes de A à Z, avec un **filtre** pour retrouver un nom tout de suite.
+- Un onglet **⭐ Tous** qui liste tous les artistes de A à Z, dans une **liste qui défile toute seule** (la page ne bouge pas). Une barre **A, B, C…** saute directement à une lettre, et un **filtre** retrouve un nom tout de suite.
 - **N'importe quel autre artiste** grâce à la recherche Deezer, et un bouton 🎲 qui ajoute un artiste au hasard. La recherche choisit le vrai artiste (nom exact, le plus de fans) plutôt qu'un homonyme.
 - **Playlists** : Top du moment, Top Rap, Pop, R&B, Dance et Rock (les classements Deezer de ton pays).
 - **Mix** : jusqu'à 8 artistes ou playlists en même temps.
@@ -37,6 +37,15 @@ Dans le dépôt GitHub : **Settings → Pages → Build and deployment → Branc
 - **Pause** avec le bouton ⏸️ ou la touche `Échap`, et un **compte à rebours 3D** avant chaque partie.
 - **⚡ Partie rapide** : un artiste connu au hasard, et la partie se lance tout de suite.
 - **Défis** : le bouton « Défier un pote » crée un lien avec les mêmes réglages et ton score à battre.
+
+### 🃏 Choix du mode
+Les modes de jeu sont présentés en **cartes** : 🎯 Blind test, 🎤 Qui chante ?, ❤️ Survie, ⏱️ Chrono, ⚔️ Battle, 🎲 Battle à thème et 🏆 Défi thème. Le bouton Solo / En ligne est à côté. Les modes réservés au solo sont grisés en ligne.
+
+### 🏆 Défi thème
+- Un **thème** est tiré au hasard (« pour rouler de nuit », « pour jouer à la console »…).
+- Tu as **60 secondes** pour chercher **n'importe quel son** sur Deezer (avec des idées tirées de ta sélection), l'écouter et le valider.
+- À la fin de la manche, **l'IA donne un pourcentage à chaque son** (par exemple 66 % contre 34 %) et explique son choix. **Ton pourcentage, ce sont tes points.**
+- En **solo**, tu affrontes **le bot**, qui pioche dans ta sélection d'artistes. En **ligne**, tous les joueurs du salon s'affrontent.
 
 ### ⚔️ Battles
 - **⚔️ Battle** : deux hits s'affrontent, soit de **deux artistes différents**, soit du **même artiste**. On écoute les deux extraits et on choisit le meilleur.
@@ -81,7 +90,8 @@ HTML, CSS et JavaScript, sans framework ni étape de build.
 | `css/style.css` | Design (thème sombre néon, animations, responsive) |
 | `js/artists.js` | Les suggestions d'artistes par catégorie |
 | `js/fx3d.js` | Effets 3D (Three.js) et cartes qui pivotent |
-| `js/battle.js` | Modes Battle et Battle à thème, thèmes, IA juge (intégrée ou Claude) |
+| `js/battle.js` | Modes Battle et Battle à thème, thèmes, IA juge (intégrée ou Claude), notes en % |
+| `js/pick.js` | Mode Défi thème : recherche du son, bot, révélation avec les pourcentages |
 | `js/core.js` | Outils, API Deezer (JSONP), création des questions, sons, confettis, profil, succès |
 | `js/quiz.js` | Écran de question partagé : audio, chrono, réponses, jokers, clavier |
 | `js/solo.js` | Parties solo, résultats, récap, liens de défi |

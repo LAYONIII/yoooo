@@ -108,19 +108,22 @@
     'dur-': () => 'il est plus court et efficace',
   };
 
+  /** Valeur (0 à 1) d'un son pour un critère du thème, ou null si l'info manque. */
+  function critVal(c, f) {
+    if (c.k === 'pop') return Math.min(1, Math.log10((f.rank || 0) + 10) / 6.2);
+    if (c.k === 'bpm') {
+      if (!f.bpm) return null;
+      return c.target ? Math.max(0, 1 - Math.abs(f.bpm - c.target) / 70) : Math.min(1, f.bpm / 190);
+    }
+    if (c.k === 'year') return f.year ? Math.min(1, Math.max(0, (f.year - 1960) / 70)) : null;
+    if (c.k === 'explicit') return f.explicit ? 1 : 0;
+    if (c.k === 'dur') return f.dur ? Math.min(1, f.dur / 420) : null;
+    return null;
+  }
+
   /** L'IA intégrée : un score par critère du thème, puis une explication. */
   function localJudge(theme, a, b, fa, fb) {
-    const val = (c, f) => {
-      if (c.k === 'pop') return Math.min(1, Math.log10((f.rank || 0) + 10) / 6.2);
-      if (c.k === 'bpm') {
-        if (!f.bpm) return null;
-        return c.target ? Math.max(0, 1 - Math.abs(f.bpm - c.target) / 70) : Math.min(1, f.bpm / 190);
-      }
-      if (c.k === 'year') return f.year ? Math.min(1, Math.max(0, (f.year - 1960) / 70)) : null;
-      if (c.k === 'explicit') return f.explicit ? 1 : 0;
-      if (c.k === 'dur') return f.dur ? Math.min(1, f.dur / 420) : null;
-      return null;
-    };
+    const val = critVal;
     let sa = (Math.random() - 0.5) * 0.04;
     let sb = (Math.random() - 0.5) * 0.04;
     let best = null;
@@ -214,6 +217,105 @@ Choisis le son qui correspond le mieux au thème, en t'appuyant sur ce que tu sa
     }
     if (!ai) ai = localJudge(th, a, b, fa, fb);
     return { ai, public: pub, info: { a: fa, b: fb } };
+  }
+
+  // =========================================================
+  //  NOTER PLUSIEURS SONS EN % (mode Défi thème)
+  // =========================================================
+  const LETTERS = 'ABCDEFGHIJKL';
+
+  /** Répartit 100 % entre les sons, en corrigeant les arrondis. */
+  function toPercents(values) {
+    const sum = values.reduce((x, y) => x + Math.max(0, y), 0) || 1;
+    const raw = values.map((v) => (Math.max(0, v) / sum) * 100);
+    const out = raw.map(Math.floor);
+    let rest = 100 - out.reduce((x, y) => x + y, 0);
+    raw.map((v, i) => [v - Math.floor(v), i]).sort((x, y) => y[0] - x[0]).forEach(([, i]) => { if (rest > 0) { out[i]++; rest--; } });
+    return out;
+  }
+
+  function localMany(theme, tracks, feats) {
+    const scores = feats.map((f) => {
+      let sc = (Math.random() - 0.5) * 0.04;
+      theme.crit.forEach((c) => { const v = critVal(c, f); if (v !== null) sc += c.w * (c.target ? 1 : c.dir) * v; });
+      return sc;
+    });
+    const mx = Math.max(...scores);
+    const percents = toPercents(scores.map((x) => Math.exp(3.2 * (x - mx))));
+    const order = percents.map((p, i) => i).sort((x, y) => percents[y] - percents[x]);
+    const w = order[0];
+    let reason;
+    if (tracks.length === 1) reason = `Un seul son proposé : « ${tracks[0].title} » remporte la manche.`;
+    else {
+      const l = order[1];
+      // on réutilise l'explication du duel entre les deux premiers
+      const duel = localJudge(theme, tracks[w], tracks[l], feats[w], feats[l]);
+      reason = duel.pick === 'a' ? duel.reason : `« ${tracks[w].title} » de ${tracks[w].artistName} a le meilleur score global pour ce thème.`;
+    }
+    return { percents, reason, by: 'local' };
+  }
+
+  async function claudeMany(key, theme, tracks, feats) {
+    const client = await claudeClient(key);
+    const letters = tracks.map((_, i) => LETTERS[i]);
+    const list = tracks.map((t, i) => `Son ${letters[i]} : ${describe(t, feats[i])}.`).join('\n');
+    const prompt = `Tu es le juge d'un jeu musical entre amis : chaque joueur a choisi le son qui, selon lui, colle le mieux au thème.
+Thème : ${theme.label}.
+${list}
+Donne à chaque son un pourcentage (le total doit faire 100) selon à quel point il correspond au thème, en t'appuyant sur ce que tu sais de ces morceaux (ambiance, paroles, énergie, place dans la culture). Explique ton choix du gagnant en français, en une phrase courte, fun et précise (30 mots maximum), en tutoyant les joueurs.`;
+    const props = {};
+    letters.forEach((l) => { props[l] = { type: 'integer' }; });
+    const res = await client.beta.messages.create({
+      model: 'claude-opus-5-5',
+      max_tokens: 2000,
+      betas: ['server-side-fallback-2026-07-01'],
+      fallbacks: 'default',
+      output_config: {
+        effort: 'low',
+        format: {
+          type: 'json_schema',
+          schema: {
+            type: 'object',
+            properties: { percents: { type: 'object', properties: props, required: letters, additionalProperties: false }, reason: { type: 'string' } },
+            required: ['percents', 'reason'],
+            additionalProperties: false,
+          },
+        },
+      },
+      messages: [{ role: 'user', content: prompt }],
+    });
+    if (res.stop_reason === 'refusal') throw new Error('refusal');
+    const block = res.content.find((x) => x.type === 'text');
+    const out = JSON.parse(block.text);
+    return { percents: toPercents(letters.map((l) => +out.percents[l] || 0)), reason: String(out.reason).slice(0, 240), by: 'claude' };
+  }
+
+  /** Note plusieurs sons pour un thème : { percents:[…], reason, by }. */
+  async function judgeMany(theme, tracks) {
+    if (!tracks.length) return { percents: [], reason: 'Aucun son proposé…', by: 'local' };
+    const feats = await Promise.all(tracks.map(details));
+    const key = store.get('aiKey', '');
+    if (key && tracks.length > 1) {
+      try {
+        return await Promise.race([claudeMany(key, theme, tracks, feats), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 25000))]);
+      } catch (e) {
+        if (!judge.warned) { judge.warned = true; toast("L'IA Claude ne répond pas (clé invalide ou pas de réseau) : l'IA intégrée prend le relais.", { icon: '🤖', ms: 5000 }); }
+      }
+    }
+    return localMany(theme, tracks, feats);
+  }
+
+  /** Le bot choisit un bon son pour le thème parmi quelques morceaux de la sélection (il peut se tromper). */
+  async function botPick(theme, pool, avoid) {
+    const cands = shuffle(pool.tracks.filter((t) => !avoid.has(t.id))).slice(0, 6);
+    if (!cands.length) return null;
+    const feats = await Promise.all(cands.map(details));
+    const scored = cands.map((t, i) => {
+      let sc = 0;
+      theme.crit.forEach((c) => { const v = critVal(c, feats[i]); if (v !== null) sc += c.w * (c.target ? 1 : c.dir) * v; });
+      return { t, sc };
+    }).sort((x, y) => y.sc - x.sc);
+    return Math.random() < 0.6 ? scored[0].t : scored[Math.min(1, scored.length - 1)].t;
   }
 
   // =========================================================
@@ -449,5 +551,5 @@ Choisis le son qui correspond le mieux au thème, en t'appuyant sur ce que tu sa
   }
   $('#bQuit').addEventListener('click', quit);
 
-  BT.Battle = { start, quit, UI, judge, buildDuel, checkPool, randomTheme, slim, THEMES, isRunning: () => !!game && !game.over };
+  BT.Battle = { start, quit, UI, judge, judgeMany, botPick, buildDuel, checkPool, randomTheme, slim, THEMES, isRunning: () => !!game && !game.over };
 })();

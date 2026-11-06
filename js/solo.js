@@ -306,14 +306,15 @@
     recapAudio.pause();
     const last = BT.lastGame;
     if (last && last.type === 'battle') BT.Battle.start(last.sources, last.opts);
+    else if (last && last.type === 'pick') BT.Pick.start(last.sources, last.opts);
     else start(game.sources, game.opts);
   });
   $('#homeBtn').addEventListener('click', () => { recapAudio.pause(); show('home'); });
   $('#shareBtn').addEventListener('click', async () => {
     const last = BT.lastGame;
-    if (last && last.type === 'battle') {
+    if (last && (last.type === 'battle' || last.type === 'pick')) {
       const url = `${location.origin}${location.pathname}`;
-      const text = `⚔️ J'ai fait ${$('#finalScore').textContent} pts en Battle sur BlindTest (${last.sources.map((s) => s.name).join(' / ')}). À toi de jouer !`;
+      const text = `${last.type === 'pick' ? '🏆' : '⚔️'} J'ai fait ${$('#finalScore').textContent} pts en ${last.type === 'pick' ? 'Défi thème' : 'Battle'} sur BlindTest (${last.sources.map((s) => s.name).join(' / ')}). À toi de jouer !`;
       await BT.shareOrCopy({ title: 'BlindTest', text, url }, $('#shareMsg'), 'Message copié ! Envoie-le à tes potes.');
       return;
     }

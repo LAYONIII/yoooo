@@ -78,6 +78,7 @@
     game: S.config.opts.game || 'quiz', duel: S.config.opts.duel || 'diff',
   });
   const isBattle = () => S.config && S.config.opts.game && S.config.opts.game !== 'quiz';
+  const isPick = () => S.config && S.config.opts.game === 'pick';
 
   function inviteUrl() {
     const params = new URLSearchParams({ room: S.code });
@@ -151,6 +152,8 @@
     if (!S.players.has(id)) return;
     if (msg.t === 'answer') {
       if (S.round && !S.round.isDuel && msg.round === S.round.index) registerAnswer(id, msg.choice, msg.time);
+    } else if (msg.t === 'pick') {
+      if (S.round && S.round.isPick && msg.round === S.round.index) registerPick(id, msg.track);
     } else if (msg.t === 'vote') {
       if (S.round && S.round.isDuel && msg.round === S.round.index) registerVote(id, msg.pick);
     } else if (msg.t === 'emoji' && EMOJIS.includes(msg.e)) {
@@ -185,7 +188,7 @@
     $('#loadingText').textContent = text;
     try {
       S.pool = await BT.loadPool(S.config.sources, isBattle() ? { pool: S.config.opts.pool, guess: 'title' } : S.config.opts, (txt) => { $('#loadingText').textContent = `Chargement… ${txt}`; });
-      if (isBattle()) BT.Battle.checkPool(S.pool, S.config.opts.duel);
+      if (isBattle() && !isPick()) BT.Battle.checkPool(S.pool, S.config.opts.duel);
     } catch (err) {
       S.state = 'lobby';
       sendLobby();
@@ -198,6 +201,7 @@
     S.queue = BT.freshShuffle(S.pool.tracks);
     S.total = isBattle() ? +S.config.opts.rounds : Math.min(+S.config.opts.rounds, S.queue.length);
     S.used = new Set();
+    S.usedThemes = new Set();
     S.index = -1;
     S.history = [];
     S.players.forEach((p) => Object.assign(p, { score: 0, streak: 0, correct: 0, lastPoints: 0 }));
@@ -205,7 +209,69 @@
     const msg = { t: 'countdown', total: S.total, count: S.pool.count, players: playerList(), game: S.config.opts.game || 'quiz' };
     broadcast(msg);
     onCountdown(msg);
-    later(isBattle() ? nextDuel : nextRound, 3400);
+    later(isPick() ? nextPick : isBattle() ? nextDuel : nextRound, 3400);
+  }
+
+  // ---------- Défi thème en ligne (hôte) ----------
+  const okTrack = (t) => t && typeof t === 'object' && /^https:\/\//.test(String(t.preview || '')) && t.title;
+  const cleanTrack = (t) => ({
+    id: +t.id || 0, title: String(t.title).slice(0, 120), artistName: String(t.artistName || '').slice(0, 80), album: String(t.album || '').slice(0, 120),
+    cover: /^https:\/\//.test(String(t.cover || '')) ? t.cover : '', coverSmall: /^https:\/\//.test(String(t.coverSmall || '')) ? t.coverSmall : '',
+    preview: t.preview, link: /^https:\/\//.test(String(t.link || '')) ? t.link : '', rank: +t.rank || 0, explicit: !!t.explicit, duration: +t.duration || 0,
+  });
+
+  function nextPick() {
+    if (!S.isHost || S.leaving) return;
+    S.index++;
+    if (S.index >= S.total) { endGame(); return; }
+    const theme = BT.Pick.pickTheme(S.usedThemes);
+    S.round = { index: S.index, isPick: true, theme, picks: new Map(), finished: false };
+    S.state = 'pick';
+    const ideas = BT.shuffle(S.pool.tracks).slice(0, 14).map(BT.Battle.slim);
+    const msg = { t: 'pickStart', round: S.index, total: S.total, theme, time: BT.Pick.PICK_TIME, ideas, players: playerList() };
+    broadcast(msg);
+    onPickStart(msg);
+    S.round.timer = later(finishPick, BT.Pick.PICK_TIME * 1000 + GRACE);
+  }
+
+  function registerPick(id, track) {
+    const r = S.round;
+    if (!r || !r.isPick || r.finished || r.picks.has(id)) return;
+    r.picks.set(id, okTrack(track) ? cleanTrack(track) : null);
+    const msg = { t: 'picked', ids: [...r.picks.keys()] };
+    broadcast(msg);
+    markAnswered(msg.ids);
+    checkAllAnswered();
+  }
+
+  async function finishPick() {
+    const r = S.round;
+    if (!r || r.finished) return;
+    r.finished = true;
+    clearTimeout(r.timer);
+    broadcast({ t: 'judging' });
+    onJudging();
+    const ids = [...r.picks.keys()].filter((id) => r.picks.get(id) && S.players.has(id));
+    const tracks = ids.map((id) => r.picks.get(id));
+    const res = await BT.Battle.judgeMany(r.theme, tracks);
+    if (!S.isHost || S.leaving || S.round !== r) return;
+    const entries = ids.map((id, i) => ({ id, track: tracks[i], percent: res.percents[i] || 0 }));
+    const best = entries.slice().sort((a, b) => b.percent - a.percent)[0];
+    S.players.forEach((p, id) => {
+      const e = entries.find((x) => x.id === id);
+      p.lastPoints = e ? e.percent : 0;
+      p.score += p.lastPoints;
+      if (best && best.id === id) p.correct++;
+    });
+    if (best) {
+      const bp = S.players.get(best.id);
+      S.history.push({ track: best.track, results: entries.map((e) => ({ id: e.id, points: e.percent })), pick: { theme: `${r.theme.emoji} ${r.theme.label}`, winner: bp ? bp.name : '', percent: best.percent } });
+    }
+    S.state = 'reveal';
+    const msg = { t: 'pickResult', round: r.index, entries, reason: res.reason, by: res.by, players: playerList(), last: r.index + 1 >= S.total };
+    broadcast(msg);
+    onPickResult(msg);
+    later(nextPick, 15000);
   }
 
   // ---------- Battle en ligne (hôte) ----------
@@ -266,6 +332,13 @@
   function onCountdown(msg) {
     S.myDots = [];
     if (msg.players) S.players = new Map(msg.players.map((p) => [p.id, { ...(S.players.get(p.id) || {}), ...p }]));
+    if (msg.game === 'pick') {
+      setupPickScreen(msg.total);
+      $('#pStatus').innerHTML = `🎵 ${msg.total} manches : à chaque fois, trouve le son parfait pour le thème !`;
+      renderScoreboard();
+      BT.countdown(3);
+      return;
+    }
     if (msg.game && msg.game !== 'quiz') {
       setupBattleScreen(msg.total);
       $('#duelStatus').innerHTML = `🎵 ${msg.count} morceaux · ${msg.total} duels`;
@@ -318,11 +391,11 @@
   function checkAllAnswered() {
     const r = S.round;
     if (!r || r.finished) return;
-    const got = r.isDuel ? r.votes : r.answers;
+    const got = r.isDuel ? r.votes : r.isPick ? r.picks : r.answers;
     if ([...S.players.keys()].every((id) => got.has(id))) {
       clearTimeout(r.timer);
       S.timers.delete(r.timer);
-      r.timer = later(r.isDuel ? finishDuel : finishRound, 700);
+      r.timer = later(r.isDuel ? finishDuel : r.isPick ? finishPick : finishRound, 700);
     }
   }
 
@@ -426,6 +499,9 @@
       case 'voted': markAnswered(msg.ids); break;
       case 'judging': onJudging(); break;
       case 'duelResult': onDuelResult(msg); break;
+      case 'pickStart': onPickStart(msg); break;
+      case 'picked': markAnswered(msg.ids); break;
+      case 'pickResult': onPickResult(msg); break;
       case 'reveal': onReveal(msg); break;
       case 'end': onEnd(msg); break;
       case 'emoji': showEmoji(msg); break;
@@ -478,7 +554,9 @@
       $('#lobbyConfig').innerHTML = `
         <div class="cfg-sources">${sm.sources.map((s) => `<span class="chip">${s.picture ? `<img src="${esc(s.picture)}" alt="">` : `<span class="mini">${esc(s.emoji || '♪')}</span>`}${esc(s.name)}</span>`).join('')}</div>
         <div class="cfg-tags">
-          ${sm.game && sm.game !== 'quiz'
+          ${sm.game === 'pick'
+    ? `<span>🏆 Défi thème</span><span>🎵 ${sm.rounds} manches</span><span>⏱️ 60 s pour choisir</span>`
+    : sm.game && sm.game !== 'quiz'
     ? `<span>${sm.game === 'theme' ? '🎲 Battle à thème' : '⚔️ Battle'}</span><span>⚔️ ${sm.rounds} duels</span><span>${sm.duel === 'same' ? '🎤 Même artiste' : '🆚 Artistes différents'}</span>`
     : `<span>🎯 Blind test</span><span>❓ ${sm.rounds} questions</span><span>${sm.guess === 'artist' ? '🎤 Qui chante ?' : '🎵 Le titre'}</span><span>${{ easy: '😎', normal: '🔥', hard: '💀' }[sm.difficulty]} ${DIFFICULTY[sm.difficulty].label}</span>`}
           <span>${{ 50: '⭐ Les hits', 100: '📀 Top 100', all: '💿 Toute la disco' }[sm.pool] || '⭐ Les hits'}</span>
@@ -538,7 +616,70 @@
     S.currentDuel = msg;
   }
 
+  function setupPickScreen(total) {
+    document.body.dataset.playMode = 'online';
+    $('#pScoreboardWrap').classList.remove('hidden');
+    $('#pEmojiBar').classList.remove('hidden');
+    $('#pChoose').classList.add('hidden');
+    $('#pReveal').classList.add('hidden');
+    $('#pTheme').innerHTML = '';
+    $('#pProgress').textContent = '';
+    BT.Pick.UI.setHud([
+      { id: 'progress', label: 'Manche', value: `1/${total || S.total}` },
+      { id: 'score', label: 'Ton score', value: 0 },
+      { id: 'rank', label: 'Rang', value: '-' },
+      { id: 'players', label: 'Joueurs', value: S.players.size },
+    ]);
+    show('pick');
+  }
+
+  function onPickStart(msg) {
+    S.state = 'pick';
+    S.total = msg.total;
+    S.currentDuel = null;
+    S.currentPick = msg;
+    if (msg.players) S.players = new Map(msg.players.map((p) => [p.id, { ...(S.players.get(p.id) || {}), ...p, lastPoints: 0 }]));
+    if (document.body.dataset.screen !== 'pick' || document.body.dataset.playMode !== 'online') setupPickScreen(msg.total);
+    BT.Pick.UI.updateHud('progress', `${msg.round + 1}/${msg.total}`);
+    updateHud();
+    renderScoreboard(new Set());
+    BT.Pick.UI.start({
+      round: msg.round, total: msg.total, theme: msg.theme, time: msg.time, ideas: msg.ideas || [], online: true,
+      onPick: (track) => {
+        const t = track ? BT.Battle.slim(track) : null;
+        if (S.isHost) registerPick('host', t);
+        else send(S.hostConn, { t: 'pick', round: msg.round, track: t });
+      },
+    });
+  }
+
+  function onPickResult(msg) {
+    S.players = new Map(msg.players.map((p) => [p.id, { ...(S.players.get(p.id) || {}), ...p }]));
+    const entries = msg.entries.map((e) => {
+      const p = S.players.get(e.id) || { name: '?', avatar: '🎧' };
+      return { name: p.name, avatar: p.avatar, track: e.track, percent: e.percent, me: e.id === S.myId };
+    });
+    const sorted = entries.slice().sort((a, b) => b.percent - a.percent);
+    const mine = entries.find((e) => e.me);
+    const message = !mine ? '⏰ Tu n\'as pas choisi de son : 0 pt.'
+      : `${sorted[0] === mine ? '🏆 Ton son remporte la manche !' : `Ton son : ${mine.percent} %`} <b class="good">+${mine.percent} pts</b>`;
+    BT.Pick.UI.reveal({ entries, reason: msg.reason, by: msg.by, message });
+    updateHud(!!mine);
+    renderScoreboard(null, true);
+    const el = document.createElement('div');
+    el.className = 'r-next';
+    $('#pStatus').appendChild(el);
+    let left = 15;
+    const tick = () => { if (!el.isConnected) return; el.textContent = msg.last ? `Résultats dans ${left} s…` : `Manche suivante dans ${left} s…`; if (left-- > 0) setTimeout(tick, 1000); };
+    tick();
+  }
+
   function onJudging() {
+    if (document.body.dataset.screen === 'pick') {
+      BT.Pick.UI.stopTimer();
+      BT.Pick.UI.setStatus('<span class="dots"><i></i><i></i><i></i></span> 🤖 Tout le monde a choisi : l\'IA note les sons…');
+      return;
+    }
     BT.Battle.UI.lock();
     BT.Battle.UI.setStatus('<span class="dots"><i></i><i></i><i></i></span> 🤖 Votes terminés, l\'IA donne son verdict…');
   }
@@ -578,6 +719,10 @@
     const medal = { 1: '🥇 ', 2: '🥈 ', 3: '🥉 ' }[rank] || '';
     Quiz.updateHud('rank', rank ? `${medal}${rank}/${count}` : '-');
     Quiz.updateHud('players', count);
+    const P = BT.Pick.UI;
+    P.updateHud('score', me ? me.score : 0);
+    P.updateHud('rank', rank ? `${medal}${rank}/${count}` : '-');
+    P.updateHud('players', count);
     const B = BT.Battle.UI;
     B.updateHud('score', me ? me.score : 0);
     B.updateHud('rank', rank ? `${medal}${rank}/${count}` : '-');
@@ -666,6 +811,7 @@
     S.state = 'end';
     Quiz.stop();
     BT.Battle.UI.stop();
+    BT.Pick.UI.stop();
     clearTimeout(S.revealTimer);
     const list = sorted(msg.players);
     S.players = new Map(msg.players.map((p) => [p.id, p]));
@@ -692,6 +838,9 @@
     // récap avec ta réponse pour chaque morceau
     const history = msg.history.map((h) => {
       const mine = h.results.find((r) => r.id === S.myId);
+      if (h.pick) {
+        return { track: h.track, status: mine && h.results.length && mine.points === Math.max(...h.results.map((x) => x.points)) ? 'ok' : 'ko', detail: `${esc(h.pick.theme)} · meilleur son : ${esc(h.pick.winner)} (${h.pick.percent} %)${mine ? ` · toi : ${mine.points} %` : ''}` };
+      }
       if (h.battle) {
         return { track: h.track, status: mine && mine.points > 0 ? 'ok' : 'ko', detail: `${esc(h.battle.a)} 🆚 ${esc(h.battle.b)}${h.battle.theme ? ` · ${esc(h.battle.theme)}` : ''}${mine && mine.points ? ` · +${mine.points} pts` : ''}` };
       }
@@ -756,6 +905,7 @@
     if (S.isHost) broadcast({ t: 'closed' });
     Quiz.stop();
     BT.Battle.UI.stop();
+    BT.Pick.UI.stop();
     const peer = S.peer;
     clearTimers();
     Object.assign(S, { peer: null });

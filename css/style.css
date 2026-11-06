@@ -842,3 +842,127 @@ body[data-play-mode="online"] #screen-battle .play-layout { grid-template-column
 .duel { max-width: 860px; margin-left: auto; margin-right: auto; }
 .verdicts, .duel-status { max-width: 860px; margin-left: auto; margin-right: auto; }
 @media (max-width: 600px) { .vs { transform: translate(-50%, 24px); } }
+
+/* =========================================================
+   V5 : liste qui défile, lettres, cartes de modes, Défi thème
+   ========================================================= */
+.scroll-grid {
+  position: relative; max-height: min(560px, 62vh); overflow-y: auto; overscroll-behavior: contain;
+  padding: 6px 8px 18px 4px; margin-top: 12px; border-radius: 18px;
+  scrollbar-width: thin; scrollbar-color: var(--violet) transparent;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 12px, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 12px, #000 calc(100% - 28px), transparent 100%);
+}
+.scroll-grid::-webkit-scrollbar { width: 8px; }
+.scroll-grid::-webkit-scrollbar-thumb { background: linear-gradient(var(--pink), var(--violet)); border-radius: 999px; }
+.scroll-grid::-webkit-scrollbar-track { background: transparent; }
+.letter-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
+.letter-bar button {
+  min-width: 30px; height: 30px; padding: 0 6px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface);
+  font-weight: 800; font-size: .85rem; color: var(--muted); transition: all .15s;
+}
+.letter-bar button:hover:not(:disabled) { color: #fff; border-color: var(--pink); transform: translateY(-2px); }
+.letter-bar button.active { background: var(--grad); color: #fff; border-color: transparent; }
+.letter-bar button:disabled { opacity: .25; }
+
+/* ---------- Cartes des modes de jeu ---------- */
+.modes-title { flex-wrap: wrap; }
+.play-toggle { margin-left: auto; }
+.game-modes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; perspective: 1000px; }
+.gm-card {
+  position: relative; display: grid; align-content: start; gap: 6px; text-align: left; padding: 16px; min-height: 172px;
+  border-radius: 20px; border: 1px solid var(--border-strong); color: var(--text); overflow: hidden;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02));
+  transition: transform .3s cubic-bezier(.2, .8, .2, 1), border-color .2s, box-shadow .3s, opacity .2s;
+  animation: card3d .45s cubic-bezier(.2, .8, .2, 1) backwards;
+}
+.gm-card:nth-child(2) { animation-delay: .04s; } .gm-card:nth-child(3) { animation-delay: .08s; } .gm-card:nth-child(4) { animation-delay: .12s; }
+.gm-card:nth-child(5) { animation-delay: .16s; } .gm-card:nth-child(6) { animation-delay: .2s; } .gm-card:nth-child(7) { animation-delay: .24s; }
+.gm-card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .3s; background: radial-gradient(240px circle at var(--gx, 50%) var(--gy, 50%), rgba(255, 255, 255, .16), transparent 60%); }
+.gm-card:hover { border-color: rgba(255, 255, 255, .35); }
+.gm-card.active {
+  border-color: var(--pink); background: linear-gradient(160deg, rgba(255, 46, 147, .2), rgba(139, 92, 246, .14));
+  box-shadow: 0 0 0 1px var(--pink) inset, 0 18px 40px -14px rgba(255, 46, 147, .65);
+}
+.gm-card.active::after { content: "✓"; position: absolute; top: 12px; right: 12px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--pink); font-weight: 900; font-size: .85rem; }
+.gm-card.off { opacity: .38; filter: grayscale(.6); cursor: not-allowed; }
+.gm-icon { font-size: 2rem; width: 54px; height: 54px; display: grid; place-items: center; border-radius: 16px; background: var(--surface-2); margin-bottom: 4px; }
+.gm-card.active .gm-icon { background: var(--grad); box-shadow: 0 8px 20px -8px rgba(255, 46, 147, .8); }
+.gm-card b { font-size: 1.08rem; }
+.gm-desc { color: var(--muted); font-size: .85rem; line-height: 1.35; }
+.gm-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; padding-top: 6px; }
+.gm-tags i { font-style: normal; font-size: .72rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.gm-new { position: absolute; top: 12px; right: 12px; padding: 3px 9px; border-radius: 999px; background: var(--warn); color: #111; font-size: .7rem; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; animation: bump 1.6s ease-in-out infinite; }
+.gm-card.active .gm-new { right: 44px; }
+
+/* ---------- Défi thème ---------- */
+.theme-card.big { padding: 16px 28px 16px 18px; }
+.theme-card.big b { font-size: 1.5rem; }
+.theme-card:empty { display: none; }
+.pick-choose { max-width: 820px; margin: 16px auto 0; display: grid; gap: 12px; }
+.pick-choose.locked .pick-list, .pick-choose.locked .search { opacity: .5; pointer-events: none; }
+.pick-timer { display: flex; align-items: center; gap: 12px; }
+.pt-track { flex: 1; height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.pt-track i { display: block; height: 100%; width: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--good), var(--cyan)); transition: width .2s linear; }
+.pt-track i.danger { background: linear-gradient(90deg, var(--bad), var(--warn)); }
+#pTime { font-weight: 800; min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+.pick-current {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; min-height: 66px;
+  background: var(--surface); border: 1px dashed var(--border-strong);
+}
+.pick-current.chosen { border-style: solid; border-color: var(--good); background: rgba(52, 211, 153, .08); animation: pop .3s ease; }
+.pick-current img { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; }
+.pc-label { font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.pick-list { max-height: 340px; overflow-y: auto; display: grid; gap: 6px; padding-right: 4px; scrollbar-width: thin; scrollbar-color: var(--violet) transparent; }
+.pr-title { margin: 2px 0 4px; color: var(--muted); font-size: .85rem; font-weight: 600; }
+.pick-row { display: grid; grid-template-columns: 44px 1fr auto auto; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; background: var(--surface); border: 1px solid transparent; transition: border-color .15s, background .15s; }
+.pick-row:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.pick-row img, .pr-noart { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; background: var(--surface-3); display: grid; place-items: center; }
+.pr-text { display: grid; min-width: 0; }
+.pr-text b, .pr-text span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-text span { color: var(--muted); font-size: .82rem; }
+.pr-play, .pc-play { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--surface-2); }
+.pr-play:hover, .pc-play:hover { background: var(--pink); border-color: var(--pink); }
+#pReveal { max-width: 900px; margin: 16px auto 0; }
+.pick-verdict { margin-bottom: 14px; }
+.pick-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; perspective: 1100px; }
+.pick-card {
+  position: relative; display: grid; gap: 8px; padding: 12px; border-radius: 20px; background: var(--surface); border: 1px solid var(--border-strong);
+  animation: duelIn .7s cubic-bezier(.2, .9, .3, 1.2) backwards; --from: -40deg;
+}
+.pick-card.winner { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold) inset, 0 26px 60px -20px rgba(251, 191, 36, .7); transform: translateZ(30px); }
+.pick-card.me .pc-who { color: var(--cyan); }
+.pc-crown { position: absolute; top: -24px; left: 50%; transform: translateX(-50%); font-size: 2.2rem; animation: bob 2s ease-in-out infinite; filter: drop-shadow(0 6px 12px rgba(251, 191, 36, .6)); }
+.pc-art { position: relative; aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: var(--surface-3); }
+.pc-art img { width: 100%; height: 100%; object-fit: cover; }
+.pc-art .pc-play { position: absolute; right: 10px; bottom: 10px; width: 44px; height: 44px; background: rgba(10, 10, 18, .7); backdrop-filter: blur(6px); }
+.pc-who { font-weight: 800; }
+.pc-who small { color: var(--muted); font-weight: 500; }
+.pc-title { display: grid; min-width: 0; }
+.pc-title b, .pc-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-title span { color: var(--muted); font-size: .85rem; }
+.pc-meter { height: 10px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.pc-meter i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--grad); transition: width 1.2s cubic-bezier(.2, .8, .2, 1); }
+.pc-meter i.go { width: var(--p); }
+.pick-card.winner .pc-meter i { background: linear-gradient(90deg, var(--gold), #fb923c); }
+.pc-percent { font-size: 2rem; font-weight: 900; letter-spacing: -.02em; }
+.pick-card.winner .pc-percent { color: var(--gold); }
+body[data-play-mode="online"] #screen-pick .play-layout { grid-template-columns: 1fr 290px; align-items: start; }
+@media (max-width: 960px) { body[data-play-mode="online"] #screen-pick .play-layout { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+  .scroll-grid { max-height: 58vh; }
+  .game-modes { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .gm-card { min-height: 0; padding: 12px; }
+  .gm-icon { width: 42px; height: 42px; font-size: 1.5rem; }
+  .gm-desc { font-size: .78rem; }
+  .play-toggle { margin-left: 0; width: 100%; }
+  .theme-card.big b { font-size: 1.15rem; }
+  .pick-row { grid-template-columns: 40px 1fr auto; }
+  .pick-row .pr-play { display: none; }
+  .pick-cards { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pc-percent { font-size: 1.5rem; }
+}
+.pick-cards { grid-template-columns: repeat(auto-fit, minmax(190px, 250px)); justify-content: center; }
+.gm-new { animation: newPulse 1.6s ease-in-out infinite; color: #111; }
+@keyframes newPulse { 50% { transform: scale(1.1) rotate(-3deg); } }
+@media (max-width: 600px) { .pick-cards { grid-template-columns: 1fr 1fr; } }

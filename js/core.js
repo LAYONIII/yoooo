@@ -81,6 +81,15 @@ window.BT = window.BT || {};
       const res = await jsonp(`/search/artist?q=${encodeURIComponent(q)}&limit=${Math.max(limit, 15)}`);
       return bestFirst((res.data || []).map(toArtist), q).slice(0, limit);
     },
+    /** Recherche de morceaux (titre, artiste…), pour le mode Défi thème. */
+    async searchTracks(q, limit = 25) {
+      const res = await jsonp(`/search?q=${encodeURIComponent(q)}&limit=${limit}`);
+      return (res.data || []).filter((t) => t.preview && t.readable !== false).map((t) => ({
+        id: t.id, title: t.title_short || t.title, artistName: t.artist ? t.artist.name : '', album: t.album ? t.album.title : '',
+        cover: t.album ? (t.album.cover_big || t.album.cover_medium || '') : '', coverSmall: t.album ? (t.album.cover_small || t.album.cover_medium || '') : '',
+        preview: t.preview, link: t.link || `https://www.deezer.com/track/${t.id}`, rank: t.rank || 0, explicit: !!t.explicit_lyrics, duration: t.duration || 0,
+      }));
+    },
     async track(id) {
       try { return await jsonp(`/track/${id}`); } catch { return null; }
     },
@@ -202,7 +211,7 @@ window.BT = window.BT || {};
     normal: { time: 12, randomStart: false, label: 'Normal' },
     hard: { time: 6, randomStart: true, label: 'Difficile' },
   };
-  const MODES = { classic: 'Classique', survival: 'Survie', chrono: 'Chrono', online: 'En ligne', battle: 'Battle', theme: 'Battle à thème' };
+  const MODES = { classic: 'Classique', survival: 'Survie', chrono: 'Chrono', online: 'En ligne', battle: 'Battle', theme: 'Battle à thème', pick: 'Défi thème' };
 
   /** Charge tous les morceaux des sources choisies et prépare le « pool » de questions. */
   async function loadPool(sources, { pool: size, guess }, onProgress) {
@@ -420,6 +429,7 @@ window.BT = window.BT || {};
     { id: 'champion', icon: '👑', name: 'Champion', desc: 'Gagne une partie en ligne contre au moins 1 joueur.' },
     { id: 'battle', icon: '⚔️', name: 'Gladiateur', desc: 'Termine une battle de 5 duels ou plus.' },
     { id: 'mindreader', icon: '🧠', name: 'Télépathe', desc: "Sois d'accord avec l'IA sur tous les duels d'une battle (5 ou plus)." },
+    { id: 'curator', icon: '🎧', name: 'Curateur', desc: 'Gagne toutes les manches d\'un Défi thème (5 ou plus) contre le bot.' },
     { id: 'explorer', icon: '🧭', name: 'Explorateur', desc: 'Joue avec 10 artistes ou playlists différents.' },
   ];
   const unlocked = store.get('badges', {});

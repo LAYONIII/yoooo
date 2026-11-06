@@ -2,8 +2,8 @@
    Stratégie « réseau d'abord » pour nos fichiers : on a toujours la dernière version
    quand on est en ligne, et la copie en cache sinon. Les requêtes vers Deezer
    et PeerJS ne sont jamais mises en cache. */
-const CACHE = 'blindtest-v4';
-const FILES = ['./', 'index.html', 'css/style.css', 'js/core.js', 'js/artists.js', 'js/quiz.js', 'js/solo.js', 'js/battle.js', 'js/online.js', 'js/app.js', 'js/fx3d.js', 'icon.svg', 'manifest.webmanifest'];
+const CACHE = 'blindtest-v5';
+const FILES = ['./', 'index.html', 'css/style.css', 'js/core.js', 'js/artists.js', 'js/quiz.js', 'js/solo.js', 'js/battle.js', 'js/pick.js', 'js/online.js', 'js/app.js', 'js/fx3d.js', 'icon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));

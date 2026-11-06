@@ -13,6 +13,27 @@
   const settings = Object.assign({ play: 'solo', game: 'quiz', duel: 'diff', mode: 'classic', rounds: '10', guess: 'title', difficulty: 'normal', pool: 'all' }, store.get('settings3', store.get('settings2', {})));
   if (!settings.game) settings.game = 'quiz';
   if (!settings.duel) settings.duel = 'diff';
+
+  // Les modes de jeu affichés en cartes. « set » = les réglages appliqués quand on choisit la carte.
+  const GAME_MODES = [
+    { id: 'classic', icon: '🎯', name: 'Blind test', desc: "Écoute l'extrait et trouve le titre parmi 4 propositions.", set: { game: 'quiz', mode: 'classic', guess: 'title' }, online: true },
+    { id: 'whois', icon: '🎤', name: 'Qui chante ?', desc: "Écoute l'extrait et trouve l'artiste.", set: { game: 'quiz', mode: 'classic', guess: 'artist' }, online: true },
+    { id: 'survival', icon: '❤️', name: 'Survie', desc: '3 vies : tiens le plus longtemps possible.', set: { game: 'quiz', mode: 'survival', guess: 'title' }, online: false },
+    { id: 'chrono', icon: '⏱️', name: 'Chrono', desc: '90 secondes pour trouver un maximum de titres.', set: { game: 'quiz', mode: 'chrono', guess: 'title' }, online: false },
+    { id: 'battle', icon: '⚔️', name: 'Battle', desc: "Deux hits s'affrontent : vote pour le meilleur.", set: { game: 'battle' }, online: true },
+    { id: 'theme', icon: '🎲', name: 'Battle à thème', desc: 'Un thème au hasard, deux sons : lequel colle le mieux ?', set: { game: 'theme' }, online: true },
+    { id: 'pick', icon: '🏆', name: 'Défi thème', desc: "Un thème au hasard : trouve TOI-MÊME le son parfait. L'IA note chaque son en %.", set: { game: 'pick' }, online: true, isNew: true },
+  ];
+  if (!GAME_MODES.some((m) => m.id === settings.gm)) {
+    settings.gm = settings.game === 'battle' ? 'battle' : settings.game === 'theme' ? 'theme'
+      : settings.mode === 'survival' ? 'survival' : settings.mode === 'chrono' ? 'chrono' : settings.guess === 'artist' ? 'whois' : 'classic';
+  }
+  function applyMode(id) {
+    const m = GAME_MODES.find((x) => x.id === id);
+    settings.gm = m.id;
+    Object.assign(settings, { mode: 'classic', guess: 'title' }, m.set);
+  }
+  applyMode(settings.gm);
   if (!['50', '100', 'all'].includes(settings.pool)) settings.pool = '50';
   const saveSettings = () => store.set('settings3', settings);
 
@@ -152,8 +173,8 @@
     $('#abTitle').textContent = n === 1 ? list[0].name : `${n} artistes / playlists`;
     const poolLabel = { 50: 'Les hits', 100: 'Top 100', all: 'Toute la disco' }[settings.pool];
     const battle = settings.game !== 'quiz';
-    const gameLabel = { quiz: 'Blind test', battle: 'Battle', theme: 'Battle à thème' }[settings.game];
-    $('#abSub').textContent = battle ? `${gameLabel}${settings.play === 'online' ? ' en ligne' : ''} · ${settings.rounds} duels · ${poolLabel}`
+    const gameLabel = { quiz: 'Blind test', battle: 'Battle', theme: 'Battle à thème', pick: 'Défi thème' }[settings.game];
+    $('#abSub').textContent = battle ? `${gameLabel}${settings.play === 'online' ? ' en ligne' : ''} · ${settings.rounds} ${settings.game === 'pick' ? 'manches' : 'duels'} · ${poolLabel}`
       : settings.play === 'online' ? `En ligne · ${settings.rounds} questions · ${poolLabel}`
       : `${MODES[settings.mode]}${settings.mode === 'classic' ? ` · ${settings.rounds} questions` : ''} · ${DIFFICULTY[settings.difficulty].label} · ${poolLabel}`;
     $('#abPlay').textContent = settings.play === 'online' ? (BT.Online.isHosting() ? '✔ Salon' : '🌐 Créer') : '▶ Jouer';
@@ -168,7 +189,7 @@
     const what = n === 1 ? names[0] : `${n} choix (mix)`;
     if (n === 0) btn.textContent = 'Choisis au moins un artiste ou une playlist';
     else if (settings.play === 'online') btn.textContent = BT.Online.isHosting() ? '✔ Mettre à jour le salon' : `🌐 Créer le salon · ${what}`;
-    else btn.textContent = `${settings.game === 'quiz' ? '▶ Jouer' : '⚔️ Lancer la battle'} · ${what}`;
+    else btn.textContent = `${{ quiz: '▶ Jouer', battle: '⚔️ Lancer la battle', theme: '⚔️ Lancer la battle', pick: '🏆 Lancer le défi' }[settings.game]} · ${what}`;
   }
 
   let currentCat = 'all';
@@ -202,8 +223,29 @@
       loadPresetPictures();
     }
     applyFilter();
+    renderLetters();
     renderSelected();
+    grid.scrollTop = 0;
   }
+
+  // A, B, C… : saute directement à la lettre dans la liste « Tous »
+  const firstLetter = (name) => { const c = BT.norm(name).charAt(0).toUpperCase(); return /[A-Z]/.test(c) ? c : '#'; };
+  function renderLetters() {
+    const bar = $('#letterBar');
+    bar.classList.toggle('hidden', currentCat !== 'all');
+    if (currentCat !== 'all') return;
+    const present = new Set(ALL.map(firstLetter));
+    bar.innerHTML = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map((l) => `<button type="button" data-letter="${l}" ${present.has(l) ? '' : 'disabled'}>${l}</button>`).join('');
+  }
+  $('#letterBar').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-letter]');
+    if (!b) return;
+    const grid = $('#presets');
+    const card = $$('#presets .artist:not(.hidden)').find((c) => firstLetter(c.dataset.name) === b.dataset.letter);
+    if (!card) return;
+    grid.scrollTo({ top: card.offsetTop - 8, behavior: 'smooth' });
+    $$('#letterBar button').forEach((x) => x.classList.toggle('active', x === b));
+  });
 
   // filtre la liste affichée en tapant un nom
   function applyFilter() {
@@ -317,10 +359,37 @@
     chrono: '90 secondes pour trouver un maximum de titres. Une erreur coûte 5 s.',
     online: "Tu crées un salon et tu donnes le code à tes potes. Tout le monde entend le même extrait en même temps, et le premier à trouver gagne +50 pts.",
     battle: "Deux sons s'affrontent : écoute-les et choisis le meilleur. Tu gagnes des points si le public (le son le plus écouté) et l'IA sont d'accord avec toi. En ligne, la majorité du salon décide.",
+    pick: "Un thème est tiré au hasard. Tu as 60 secondes pour chercher n'importe quel son sur Deezer et choisir celui qui colle le mieux. En solo, tu affrontes le bot (il pioche dans ta sélection). À la fin de la manche, l'IA donne un pourcentage à chaque son : ce pourcentage, ce sont tes points.",
     theme: "Un thème est tiré au hasard (« pour la salle de sport », « pour un chagrin d'amour »…). Choisis le son qui colle le mieux au thème. L'IA donne son verdict et l'explique.",
   };
+  function renderModes() {
+    const online = settings.play === 'online';
+    $('#gameModes').innerHTML = GAME_MODES.map((m) => {
+      const off = online && !m.online;
+      return `<button class="gm-card${m.id === settings.gm ? ' active' : ''}${off ? ' off' : ''}" data-gm="${m.id}" data-tilt="10" ${off ? 'aria-disabled="true"' : ''}>
+        ${m.isNew ? '<span class="gm-new">Nouveau</span>' : ''}
+        <span class="gm-icon">${m.icon}</span>
+        <b>${esc(m.name)}</b>
+        <span class="gm-desc">${esc(m.desc)}</span>
+        <span class="gm-tags">${m.online ? '<i>🎧 Solo</i><i>🌐 En ligne</i>' : '<i>🎧 Solo uniquement</i>'}</span>
+      </button>`;
+    }).join('');
+  }
+  $('#gameModes').addEventListener('click', (e) => {
+    const card = e.target.closest('.gm-card');
+    if (!card) return;
+    const m = GAME_MODES.find((x) => x.id === card.dataset.gm);
+    if (settings.play === 'online' && !m.online) { toast(`${m.name} se joue seulement en solo`, { icon: '🎧' }); return; }
+    applyMode(m.id);
+    saveSettings();
+    BT.sfx('pop');
+    renderSettings();
+  });
+
   function renderSettings() {
-    $$('.settings .seg').forEach((seg) => {
+    if (settings.play === 'online' && !GAME_MODES.find((m) => m.id === settings.gm).online) applyMode('classic');
+    renderModes();
+    $$('[data-setting]').forEach((seg) => {
       const key = seg.dataset.setting;
       seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.value === settings[key]));
     });
@@ -329,13 +398,14 @@
     $$('[data-only="solo"]').forEach((el) => el.classList.toggle('hidden', online || !quiz));
     $$('[data-only="quiz"]').forEach((el) => el.classList.toggle('hidden', !quiz));
     $$('[data-only="battle"]').forEach((el) => el.classList.toggle('hidden', quiz));
+    $$('[data-only="battle"]').forEach((el) => el.classList.toggle('hidden', !['battle', 'theme'].includes(settings.game)));
     $$('[data-only="rounds"]').forEach((el) => el.classList.toggle('hidden', quiz && !online && settings.mode !== 'classic'));
-    $('[data-only="rounds"] .label').textContent = quiz ? 'Questions' : 'Duels';
+    $('#roundsLabel').textContent = quiz ? 'Questions' : settings.game === 'pick' ? 'Manches' : 'Duels';
     $('#settingHelp').textContent = !quiz ? HELP[settings.game] : online ? HELP.online : HELP[settings.mode];
     renderStartBtn();
     renderActionBar();
   }
-  $$('.settings .seg').forEach((seg) => seg.addEventListener('click', (e) => {
+  $$('.seg[data-setting]').forEach((seg) => seg.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     settings[seg.dataset.setting] = b.dataset.value;
@@ -355,6 +425,7 @@
     const sources = [...selected.values()];
     if (!sources.length) return;
     if (settings.play === 'online') BT.Online.host(sources, { ...settings, mode: 'online' });
+    else if (settings.game === 'pick') BT.Pick.start(sources, { ...settings });
     else if (settings.game !== 'quiz') BT.Battle.start(sources, { ...settings });
     else BT.Solo.start(sources, { ...settings });
   });
@@ -363,6 +434,7 @@
     if (BT.Online.active()) { BT.Online.leave(true); return; }
     if (BT.Solo.isRunning() && document.body.dataset.screen === 'play') { BT.Solo.quit(); return; }
     if (BT.Battle.isRunning() && document.body.dataset.screen === 'battle') { BT.Battle.quit(); return; }
+    if (BT.Pick.isRunning() && document.body.dataset.screen === 'pick') { BT.Pick.quit(); return; }
     show('home');
   });
 
@@ -499,7 +571,7 @@
     if (['50', '100', 'all'].includes(p.get('p'))) settings.pool = p.get('p');
     if (['title', 'artist'].includes(p.get('g'))) settings.guess = p.get('g');
     settings.play = 'solo';
-    settings.game = 'quiz';
+    applyMode(settings.mode === 'survival' ? 'survival' : settings.mode === 'chrono' ? 'chrono' : settings.guess === 'artist' ? 'whois' : 'classic');
     renderSettings();
     chartIds.forEach((id) => { const c = CHARTS.find((x) => x.id === id); if (c) selected.set(sourceKey(c), c); });
     try {
