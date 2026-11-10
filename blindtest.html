@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>BlindTest — Trouve le bon titre</title>
+  <meta name="description" content="Blind test musical en solo ou en ligne avec tes potes : plus de 300 artistes, rap, pop, variété, légendes… Écoute l'extrait et trouve le bon titre.">
+  <meta name="theme-color" content="#07070d">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
+  <canvas id="bg3d" aria-hidden="true"></canvas>
+  <div class="cursor-glow" aria-hidden="true"></div>
+  <canvas id="confetti" aria-hidden="true"></canvas>
+
+  <header class="topbar">
+    <button class="logo" id="logoBtn" title="Accueil">
+      <span class="logo-disc"></span><span>Blind<b>Test</b></span>
+    </button>
+    <nav class="topnav">
+      <a class="nav-btn" href="index.html" title="Changer de jeu">🎮<span>Jeux</span></a>
+      <button class="nav-btn" data-open="badgesDialog" title="Succès">🏅<span>Succès</span></button>
+      <button class="nav-btn" data-open="statsDialog" title="Classement">🏆<span>Classement</span></button>
+      <button class="nav-btn" data-open="helpDialog" title="Règles">❔<span>Règles</span></button>
+      <div class="volume">
+        <button id="muteBtn" class="nav-btn" aria-label="Couper le son">🔊</button>
+        <input id="volume" type="range" min="0" max="1" step="0.05" value="0.8" aria-label="Volume">
+      </div>
+      <button class="profile-btn" id="profileBtn" title="Mon profil"><span id="profileAvatar">🎧</span><span id="profileName">Joueur</span></button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ================= ACCUEIL ================= -->
+    <section id="screen-home" class="screen active">
+      <div class="hero">
+        <div class="hero-text">
+          <span class="pill"><span class="live-dot"></span> Plus de 300 artistes · Solo &amp; en ligne</span>
+          <h1>Le blind test qui<br>teste <span class="grad">les vrais fans</span>.</h1>
+          <p>Rap, pop, variété, légendes… Choisis tes artistes, écoute l'extrait et trouve le bon titre avant tout le monde.</p>
+
+          <div class="modes">
+            <button class="mode-card" data-tilt="14" data-play="solo">
+              <span class="mode-ico">🎧</span>
+              <b>Solo</b>
+              <span>Classique, Survie ou Chrono</span>
+            </button>
+            <button class="mode-card" data-tilt="14" data-play="online">
+              <span class="mode-ico">🌐</span>
+              <b>Créer un salon</b>
+              <span>Joue en ligne avec tes potes</span>
+            </button>
+            <form class="mode-card join-card" id="joinForm" autocomplete="off" data-tilt="8">
+              <span class="mode-ico">🔑</span>
+              <b>Rejoindre</b>
+              <div class="join-row">
+                <input id="joinCode" maxlength="6" placeholder="CODE" spellcheck="false" autocapitalize="characters" aria-label="Code du salon">
+                <button class="btn btn-sm" type="submit" aria-label="Rejoindre">➜</button>
+              </div>
+            </form>
+          </div>
+          <button class="quick-btn" id="quickPlay"><span>⚡</span> Partie rapide : un artiste au hasard, c'est parti !</button>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <canvas id="hero3d"></canvas>
+          <div class="turntable fallback">
+            <div class="vinyl spinning big"><div class="vinyl-label">🎧</div></div>
+            <div class="tonearm"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="setup" class="panel setup">
+        <div class="step-title"><span class="step">1</span><h2>Choisis ta musique</h2><span class="step-hint">jusqu'à 8 artistes ou playlists</span></div>
+        <form id="searchForm" class="search" autocomplete="off">
+          <span class="search-ico">🔎</span>
+          <input id="searchInput" type="search" placeholder="Rechercher n'importe quel artiste sur Deezer…" aria-label="Rechercher un artiste">
+        </form>
+        <div id="searchResults" class="artist-grid compact"></div>
+
+        <div id="selectedWrap" class="selected-wrap hidden">
+          <div class="selected-head"><h3>Ta sélection <span id="selectedCount"></span></h3><button class="link-btn" id="clearSel">Tout retirer</button></div>
+          <div id="selected" class="chips"></div>
+        </div>
+
+        <div class="cat-bar">
+          <div class="tabs" id="tabs" role="tablist"></div>
+        </div>
+        <div class="cat-head">
+          <p id="catDesc" class="muted"></p>
+          <div class="cat-tools">
+            <input id="catFilter" class="filter-input" type="search" placeholder="Filtrer la liste…" aria-label="Filtrer les artistes affichés">
+            <button class="btn btn-glass btn-sm" id="randomPick" title="Ajoute un artiste au hasard de cette catégorie">🎲 Au hasard</button>
+          </div>
+        </div>
+        <div class="letter-bar hidden" id="letterBar" aria-label="Aller à la lettre"></div>
+        <div id="presets" class="artist-grid scroll-grid"></div>
+
+        <div class="step-title modes-title">
+          <span class="step">2</span><h2>Choisis ton mode de jeu</h2>
+          <div class="seg play-toggle" data-setting="play">
+            <button data-value="solo">🎧 Solo</button>
+            <button data-value="online">🌐 En ligne</button>
+          </div>
+        </div>
+        <div class="game-modes" id="gameModes"></div>
+
+        <div class="step-title"><span class="step">3</span><h2>Derniers réglages</h2></div>
+        <div class="settings">
+          <div class="setting" data-only="battle">
+            <span class="label">Duels</span>
+            <div class="seg" data-setting="duel">
+              <button data-value="diff">🆚 Artistes différents</button>
+              <button data-value="same">🎤 Même artiste</button>
+            </div>
+          </div>
+          <div class="setting" data-only="rounds">
+            <span class="label" id="roundsLabel">Questions</span>
+            <div class="seg" data-setting="rounds">
+              <button data-value="5">5</button><button data-value="10">10</button><button data-value="15">15</button><button data-value="20">20</button><button data-value="30">30</button>
+            </div>
+          </div>
+          <div class="setting" data-only="quiz">
+            <span class="label">Difficulté</span>
+            <div class="seg" data-setting="difficulty">
+              <button data-value="easy">😎 Facile</button>
+              <button data-value="normal">🔥 Normal</button>
+              <button data-value="hard">💀 Difficile</button>
+            </div>
+          </div>
+          <div class="setting">
+            <span class="label">Morceaux</span>
+            <div class="seg" data-setting="pool">
+              <button data-value="50" title="Les 50 titres les plus écoutés">⭐ Les hits</button>
+              <button data-value="100" title="Les 100 titres les plus écoutés">📀 Top 100</button>
+              <button data-value="all" title="Tous les albums, EP et singles">💿 Toute la disco</button>
+            </div>
+          </div>
+        </div>
+        <p class="setting-help" id="settingHelp"></p>
+
+        <button id="startBtn" class="btn btn-xl" disabled>Choisis au moins un artiste ou une playlist</button>
+        <p id="homeError" class="error hidden"></p>
+      </div>
+
+      <!-- barre toujours visible avec la sélection et le bouton Jouer -->
+      <div class="action-bar hidden" id="actionBar">
+        <div class="ab-faces" id="abFaces"></div>
+        <div class="ab-text"><b id="abTitle"></b><span id="abSub"></span></div>
+        <button class="btn" id="abPlay">▶ Jouer</button>
+      </div>
+    </section>
+
+    <!-- ================= CHARGEMENT ================= -->
+    <section id="screen-loading" class="screen">
+      <div class="loader">
+        <div class="vinyl spinning"><div class="vinyl-label">🎧</div></div>
+        <p id="loadingText">Chargement des morceaux…</p>
+        <div class="load-bar"><i></i></div>
+      </div>
+    </section>
+
+    <!-- ================= SALON EN LIGNE ================= -->
+    <section id="screen-lobby" class="screen">
+      <div class="lobby">
+        <div class="panel lobby-main">
+          <span class="pill"><span class="live-dot"></span> Salon en ligne</span>
+          <h1 class="room-title">Code du salon</h1>
+          <button class="room-code" id="roomCode" title="Copier le lien d'invitation">------</button>
+          <p class="muted center">Tes potes cliquent sur « Rejoindre » et tapent ce code, ou ouvrent directement le lien.</p>
+          <div class="row-center">
+            <button class="btn btn-glass" id="copyInvite">🔗 Copier le lien</button>
+            <button class="btn btn-glass" id="shareInvite">📤 Partager</button>
+          </div>
+          <div class="lobby-config" id="lobbyConfig"></div>
+          <div id="lobbyHostActions" class="lobby-actions">
+            <button class="btn btn-xl" id="lobbyStart">▶ Lancer la partie</button>
+            <button class="link-btn" id="lobbyEdit">✏️ Changer la musique ou les réglages</button>
+          </div>
+          <p id="lobbyWaiting" class="waiting hidden"><span class="dots"><i></i><i></i><i></i></span> En attente que l'hôte lance la partie…</p>
+          <button class="link-btn danger" id="lobbyLeave">Quitter le salon</button>
+        </div>
+        <div class="panel lobby-players">
+          <h2>Joueurs <span id="playerCount" class="count"></span></h2>
+          <ul id="lobbyPlayers" class="players"></ul>
+          <div class="emoji-bar" data-emoji-bar></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= JEU ================= -->
+    <section id="screen-play" class="screen">
+      <div class="play-layout">
+        <div class="play-main">
+          <div class="hud" id="hud"></div>
+          <div class="dots-progress" id="dots"></div>
+
+          <div class="stage">
+            <div class="disc-wrap">
+              <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+                <circle cx="60" cy="60" r="56" class="ring-bg"/>
+                <circle cx="60" cy="60" r="56" class="ring-fg" id="ringFg"/>
+              </svg>
+              <div class="flip" id="flip">
+                <div class="face front">
+                  <div class="vinyl" id="vinyl"><div class="vinyl-label" id="vinylLabel">?</div></div>
+                </div>
+                <div class="face back"><img id="cover" alt="Pochette"></div>
+              </div>
+              <div class="time-left" id="timeLeft"></div>
+              <div class="combo hidden" id="combo"></div>
+            </div>
+            <canvas id="bars" class="bars" width="600" height="60" aria-hidden="true"></canvas>
+            <div class="question-label" id="questionLabel">Quel est ce titre ?</div>
+            <div class="reveal" id="reveal" aria-live="polite"></div>
+          </div>
+
+          <div class="answers" id="answers"></div>
+
+          <div class="game-actions">
+            <button class="btn btn-glass" id="jokerFifty" title="Retire 2 mauvaises réponses">✂️ 50/50</button>
+            <button class="btn btn-glass" id="jokerHint" title="Donne un indice mais divise les points par 2">💡 Indice</button>
+            <button class="btn btn-glass" id="jokerSkip" title="Passer sans pénalité">⏭️ Passer</button>
+            <button class="btn btn-glass" id="replayBtn" title="Réécouter (Espace)">🔁 Réécouter</button>
+            <button class="btn btn-glass" id="pauseBtn" title="Pause (Échap)">⏸️ Pause</button>
+            <button class="btn hidden" id="nextBtn">Suivant ➜</button>
+          </div>
+          <div class="emoji-bar hidden" id="playEmojiBar" data-emoji-bar></div>
+          <p class="hint">Touches <kbd>1</kbd>–<kbd>4</kbd> pour répondre · <kbd>Espace</kbd> pour réécouter · <kbd>Entrée</kbd> pour passer à la suite · <kbd>Échap</kbd> pour mettre en pause</p>
+          <button class="link-btn" id="quitBtn">Quitter la partie</button>
+        </div>
+        <aside class="scoreboard hidden" id="scoreboardWrap">
+          <h3>Classement en direct</h3>
+          <ol id="scoreboard" class="live-board"></ol>
+        </aside>
+      </div>
+      <div class="pause-overlay hidden" id="pauseOverlay">
+        <div class="pause-box">
+          <div class="pause-ico">⏸️</div>
+          <h2>Pause</h2>
+          <p class="muted">Le chrono est arrêté. Prends ton temps.</p>
+          <button class="btn btn-xl" id="pauseResume">▶ Reprendre</button>
+          <button class="link-btn danger" id="pauseQuit">Quitter la partie</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= BATTLE ================= -->
+    <section id="screen-battle" class="screen">
+      <div class="play-layout">
+        <div class="play-main">
+          <div class="hud" id="bHud"></div>
+          <p class="b-progress" id="bProgress"></p>
+          <div class="theme-card hidden" id="bTheme"></div>
+          <div class="duel">
+            <div class="duel-card" id="duelA" data-side="a"></div>
+            <div class="vs"><span>VS</span></div>
+            <div class="duel-card" id="duelB" data-side="b"></div>
+          </div>
+          <div class="duel-status" id="duelStatus" aria-live="polite"></div>
+          <div class="verdicts" id="verdicts"></div>
+          <div class="game-actions"><button class="btn hidden" id="bNext">Duel suivant ➜</button></div>
+          <div class="emoji-bar hidden" id="bEmojiBar" data-emoji-bar></div>
+          <button class="link-btn" id="bQuit">Quitter la battle</button>
+        </div>
+        <aside class="scoreboard hidden" id="bScoreboardWrap">
+          <h3>Classement en direct</h3>
+          <ol class="live-board"></ol>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ================= DÉFI THÈME ================= -->
+    <section id="screen-pick" class="screen">
+      <div class="play-layout">
+        <div class="play-main">
+          <div class="hud" id="pHud"></div>
+          <p class="b-progress" id="pProgress"></p>
+          <div class="theme-card big" id="pTheme"></div>
+          <div id="pChoose" class="pick-choose">
+            <div class="pick-timer"><div class="pt-track"><i id="pTimerBar"></i></div><span id="pTime">60 s</span></div>
+            <div class="pick-current" id="pCurrent"></div>
+            <form id="pSearchForm" class="search" autocomplete="off">
+              <span class="search-ico">🔎</span>
+              <input id="pSearch" type="search" placeholder="Cherche n'importe quel son : titre, artiste…" aria-label="Chercher un son">
+            </form>
+            <div class="pick-list" id="pResults"></div>
+            <button class="btn btn-xl" id="pValidate" disabled>✔ Valider mon son</button>
+          </div>
+          <div id="pReveal" class="hidden">
+            <div class="verdict ai pick-verdict" id="pVerdict"></div>
+            <div class="pick-cards" id="pCards"></div>
+          </div>
+          <div class="duel-status" id="pStatus" aria-live="polite"></div>
+          <div class="game-actions"><button class="btn hidden" id="pNext">Manche suivante ➜</button></div>
+          <div class="emoji-bar hidden" id="pEmojiBar" data-emoji-bar></div>
+          <button class="link-btn" id="pQuit">Quitter le défi</button>
+        </div>
+        <aside class="scoreboard hidden" id="pScoreboardWrap">
+          <h3>Classement en direct</h3>
+          <ol class="live-board"></ol>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ================= RÉSULTATS SOLO ================= -->
+    <section id="screen-results" class="screen">
+      <div class="panel results">
+        <div class="medal" id="rankEmoji">🏆</div>
+        <h1 id="rankTitle">Bien joué !</h1>
+        <p id="rankSub" class="muted"></p>
+        <div class="big-score"><span id="finalScore">0</span><small>pts</small></div>
+        <p id="newRecord" class="new-record hidden">🎉 Nouveau record !</p>
+        <div class="stats-row">
+          <div data-tilt="10"><b id="statCorrect">0/0</b><span>Bonnes réponses</span></div>
+          <div data-tilt="10"><b id="statAccuracy">0%</b><span>Précision</span></div>
+          <div data-tilt="10"><b id="statBestStreak">0</b><span>Meilleure série</span></div>
+          <div data-tilt="10"><b id="statAvgTime">0 s</b><span>Temps moyen</span></div>
+        </div>
+        <div class="result-actions">
+          <button class="btn btn-xl" id="replaySameBtn">🔁 Rejouer</button>
+          <button class="btn btn-glass" id="shareBtn">⚔️ Défier un pote</button>
+          <button class="btn btn-glass" id="homeBtn">🏠 Changer de musique</button>
+        </div>
+        <p id="shareMsg" class="muted hidden"></p>
+      </div>
+      <div class="panel">
+        <h2>Récap des morceaux</h2>
+        <ol id="recap" class="recap"></ol>
+      </div>
+    </section>
+
+    <!-- ================= PODIUM EN LIGNE ================= -->
+    <section id="screen-podium" class="screen">
+      <div class="panel results">
+        <h1>🏁 Fin de la partie</h1>
+        <p class="muted" id="podiumSub"></p>
+        <div class="podium" id="podium"></div>
+        <ol class="ranking" id="ranking"></ol>
+        <div class="result-actions">
+          <button class="btn btn-xl" id="podiumReplay">🔁 Nouvelle partie dans ce salon</button>
+          <p id="podiumWaiting" class="waiting hidden"><span class="dots"><i></i><i></i><i></i></span> L'hôte peut relancer une partie…</p>
+          <button class="btn btn-glass" id="podiumLeave">🚪 Quitter le salon</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Récap des morceaux</h2>
+        <ol id="podiumRecap" class="recap"></ol>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================= SUPERPOSITIONS ================= -->
+  <div class="countdown hidden" id="countdown" aria-live="assertive"></div>
+
+  <dialog id="confirmDialog" class="dialog dialog-sm">
+    <p id="confirmText" class="confirm-text"></p>
+    <div class="confirm-actions">
+      <button class="btn btn-glass" id="confirmCancel">Annuler</button>
+      <button class="btn" id="confirmOk">Oui</button>
+    </div>
+  </dialog>
+
+  <dialog id="statsDialog" class="dialog">
+    <form method="dialog"><button class="close" aria-label="Fermer">✕</button></form>
+    <h2>🏆 Classement</h2>
+    <div class="seg small" id="lbFilter">
+      <button data-value="all" class="active">Tout</button>
+      <button data-value="classic">Classique</button>
+      <button data-value="survival">Survie</button>
+      <button data-value="chrono">Chrono</button>
+      <button data-value="online">En ligne</button>
+      <button data-value="battle">Battle</button>
+      <button data-value="pick">Défi thème</button>
+    </div>
+    <ol id="leaderboard" class="leaderboard"></ol>
+    <h2>📊 Tes stats</h2>
+    <div class="stats-row" id="globalStats"></div>
+    <button class="link-btn danger" id="resetStats">Effacer mes scores</button>
+  </dialog>
+
+  <dialog id="badgesDialog" class="dialog">
+    <form method="dialog"><button class="close" aria-label="Fermer">✕</button></form>
+    <h2>🏅 Succès <span id="badgeCount" class="count"></span></h2>
+    <div class="badges" id="badges"></div>
+  </dialog>
+
+  <dialog id="profileDialog" class="dialog">
+    <form method="dialog"><button class="close" aria-label="Fermer">✕</button></form>
+    <h2>👤 Mon profil</h2>
+    <label class="field">Pseudo<input id="nameInput" class="text-input" maxlength="16" placeholder="Ton pseudo"></label>
+    <p class="label">Avatar</p>
+    <div class="avatars" id="avatars"></div>
+    <details class="ai-box" id="aiBox">
+      <summary>🤖 IA des battles <span id="aiStatus" class="ai-status"></span></summary>
+      <p class="muted small">Par défaut, l'<b>IA du jeu</b> (gratuite) juge les battles en analysant le tempo, la popularité, l'année et les paroles des sons. Pour un vrai juge qui connaît les morceaux, colle ta <b>clé d'API Claude</b> (console.anthropic.com). Elle reste uniquement dans ton navigateur et n'est envoyée qu'à l'API d'Anthropic. Chaque verdict est facturé sur ton compte Anthropic.</p>
+      <input id="aiKey" class="text-input" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+      <button class="link-btn" id="aiClear" type="button">Retirer la clé</button>
+    </details>
+    <form method="dialog"><button class="btn btn-xl">Valider</button></form>
+  </dialog>
+
+  <dialog id="joinDialog" class="dialog">
+    <form method="dialog"><button class="close" aria-label="Fermer">✕</button></form>
+    <h2>🌐 Rejoindre le salon <span id="joinDialogCode" class="grad"></span></h2>
+    <label class="field">Ton pseudo<input id="joinName" class="text-input" maxlength="16" placeholder="Ton pseudo"></label>
+    <p class="label">Avatar</p>
+    <div class="avatars" id="joinAvatars"></div>
+    <button class="btn btn-xl" id="joinConfirm">Entrer dans le salon ➜</button>
+  </dialog>
+
+  <dialog id="helpDialog" class="dialog">
+    <form method="dialog"><button class="close" aria-label="Fermer">✕</button></form>
+    <h2>❔ Comment jouer</h2>
+    <ul class="rules">
+      <li>Choisis <b>un ou plusieurs artistes</b> (plus de 300 suggestions, ou n'importe quel artiste avec la recherche) ou une <b>playlist</b>. Avec plusieurs choix, les morceaux sont mélangés.</li>
+      <li><b>Morceaux</b> : ⭐ les hits (50 titres), 📀 le top 100, ou 💿 <b>toute la disco</b> (tous les albums, EP et singles : parfait pour les vrais fans).</li>
+      <li>Un <b>extrait</b> se lance. Trouve <b>le titre</b> (ou <b>l'artiste</b> en mode « Qui chante ? ») parmi 4 propositions.</li>
+      <li><b>Points</b> : 100 par bonne réponse, plus un <b>bonus de vitesse</b> qui va jusqu'à 100. Les points sont multipliés par <b>×1,5</b> à partir de 3 bonnes réponses d'affilée, et par <b>×2</b> à partir de 5.</li>
+      <li><b>Jokers en solo</b> (un de chaque par partie) : ✂️ 50/50, 💡 Indice (les points de la question sont divisés par 2), ⏭️ Passer. <kbd>Échap</kbd> met la partie en pause.</li>
+      <li><b>Modes solo</b> : 🎯 Classique (5 à 30 questions) · ❤️ Survie (3 vies) · ⏱️ Chrono (90 s, une erreur coûte 5 s).</li>
+      <li><b>En ligne</b> : crée un salon et donne le code à tes potes. Tout le monde entend le même extrait en même temps. Le <b>premier</b> à trouver la bonne réponse gagne <b>+50 pts</b>.</li>
+      <li><b>Difficulté</b> : Facile = 20 s, Normal = 12 s, Difficile = 6 s avec un passage pris au hasard dans le morceau.</li>
+      <li><b>⚔️ Battle</b> : deux sons s'affrontent (deux artistes différents, ou deux sons du même artiste). Écoute les deux et choisis le meilleur. En solo, tu gagnes des points si le public (le son le plus écouté sur Deezer) et l'IA sont d'accord avec toi. En ligne, la majorité du salon désigne le gagnant.</li>
+      <li><b>🏆 Défi thème</b> : un thème est tiré au hasard et tu as 60 s pour chercher <b>n'importe quel son</b> qui colle au thème. À la fin de la manche, l'IA donne un <b>pourcentage</b> à chaque son, et ce pourcentage, ce sont tes points. En solo tu affrontes le bot, en ligne tes potes.</li>
+      <li><b>🎲 Battle à thème</b> : un thème est tiré au hasard (« pour la salle de sport », « pour un chagrin d'amour »…). Choisis le son qui colle le mieux au thème. L'<b>IA</b> donne son verdict et l'explique. Dans ton profil, tu peux brancher l'IA Claude avec ta propre clé.</li>
+    </ul>
+    <p class="muted small">Extraits de 30 s fournis par l'API publique de Deezer. Le mode en ligne connecte les joueurs directement entre eux (WebRTC), sans compte à créer.</p>
+  </dialog>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <audio id="audio" preload="auto"></audio>
+  <audio id="recapAudio" preload="none"></audio>
+
+  <script src="js/core.js"></script>
+  <script src="js/artists.js"></script>
+  <script src="js/quiz.js"></script>
+  <script src="js/solo.js"></script>
+  <script src="js/battle.js"></script>
+  <script src="js/pick.js"></script>
+  <script src="js/online.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/fx3d.js"></script>
+</body>
+</html>

@@ -1,6 +1,25 @@
-# 🎧 BlindTest
+# 🎮 Jeux musicaux : BlindTest & TierList
 
-Un blind test musical **en solo ou en ligne avec tes potes** : choisis tes artistes ou une playlist, écoute l'extrait et trouve le bon titre parmi 4 propositions.
+Deux jeux musicaux gratuits, **en solo ou en ligne avec tes potes**, avec plus de 300 artistes (rap, pop, variété, légendes…) et les extraits de Deezer.
+
+- **`index.html`** : la page d'accueil, pour choisir son jeu.
+- **`blindtest.html`** : 🎧 **BlindTest**. Écoute l'extrait et trouve le bon titre (7 modes de jeu, battles, défis à thème).
+- **`tierlist.html`** : 🏆 **TierList**. Choisis un artiste, écoute ses sons un par un et classe-les du S tier au F tier.
+
+## 🏆 TierList
+
+- **Choix de l'artiste** : la même liste que le blind test (onglets, barre A-Z, filtre, recherche Deezer, playlists).
+- **Nombre de sons** : les 15, 30, 50 ou 100 plus écoutés, ou toute la discographie.
+- **Un son à la fois** : la **pochette** s'affiche avec son vinyle et l'**extrait se lance tout seul**.
+- **Classement** de **S** (légendaire) à **F** (à jeter) : en cliquant sur le rang, avec les touches `S` `A` `B` `C` `D` `F`, ou en glissant la pochette.
+- **On peut changer d'avis** : un clic sur un son déjà classé le rejoue et permet de le déplacer. ⏭ remet un son à plus tard.
+- **Sauvegarde automatique** : la tier list se reprend plus tard depuis l'accueil.
+- **À la fin** : image à télécharger (PNG) et lien de partage qui rouvre la tier list chez un pote.
+- **En ligne, à plusieurs** :
+  - l'hôte crée un salon et donne le code (ou le lien) ;
+  - tout le monde entend **le même extrait en même temps** : lecture, pause et réécoute sont synchronisées, quel que soit le joueur qui clique ;
+  - chacun vote un rang, et le son va dans le **rang moyen** du groupe ;
+  - à la fin, on voit la tier list du groupe et qui était le plus d'accord avec elle.
 
 ## Jouer
 
@@ -86,7 +105,12 @@ HTML, CSS et JavaScript, sans framework ni étape de build.
 
 | Fichier | Rôle |
 |---|---|
-| `index.html` | Structure des écrans et des fenêtres |
+| `index.html` | Page d'accueil : choix du jeu |
+| `blindtest.html` | Le blind test : structure des écrans et des fenêtres |
+| `tierlist.html`, `css/tierlist.css`, `js/tierlist.js` | Le jeu TierList (solo, en ligne, image, partage) |
+| `js/picker.js` | Sélecteur d'artiste réutilisable (utilisé par TierList) |
+| `js/room.js` | Salon en ligne réutilisable (PeerJS), utilisé par TierList |
+| `css/hub.css` | Styles de la page d'accueil |
 | `css/style.css` | Design (thème sombre néon, animations, responsive) |
 | `js/artists.js` | Les suggestions d'artistes par catégorie |
 | `js/fx3d.js` | Effets 3D (Three.js) et cartes qui pivotent |
